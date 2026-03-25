@@ -383,9 +383,7 @@ export function PipelineTable({
                 >
                   <td className="px-4 py-3 max-w-[220px]">
                     <a
-                      href={item.notionUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href={`/dashboard/content/${item.id}`}
                       className="text-zinc-200 hover:text-zinc-50 hover:underline truncate block"
                       title={item.title}
                     >

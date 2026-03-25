@@ -4,6 +4,8 @@ import {
   updatePageCheckbox,
   updatePageUrl,
   updatePageRichText,
+  updatePageDate,
+  updatePageMultiSelect,
 } from "@/lib/notion";
 
 export async function POST(request: NextRequest) {
@@ -29,6 +31,12 @@ export async function POST(request: NextRequest) {
         break;
       case "rich_text":
         await updatePageRichText(pageId, field, value);
+        break;
+      case "date":
+        await updatePageDate(pageId, field, value);
+        break;
+      case "multi_select_raw":
+        await updatePageMultiSelect(pageId, field, value);
         break;
       default:
         return NextResponse.json(

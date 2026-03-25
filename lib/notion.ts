@@ -173,6 +173,38 @@ export async function updatePageUrl(
   });
 }
 
+// 날짜 변경
+export async function updatePageDate(
+  pageId: string,
+  field: string,
+  value: string | null
+) {
+  return notionFetch(`/pages/${pageId}`, {
+    method: "PATCH",
+    body: {
+      properties: {
+        [field]: value ? { date: { start: value } } : { date: null },
+      },
+    },
+  });
+}
+
+// 멀티셀렉트 변경
+export async function updatePageMultiSelect(
+  pageId: string,
+  field: string,
+  value: Array<{ name: string }>
+) {
+  return notionFetch(`/pages/${pageId}`, {
+    method: "PATCH",
+    body: {
+      properties: {
+        [field]: { multi_select: value },
+      },
+    },
+  });
+}
+
 // 리치텍스트 변경
 export async function updatePageRichText(
   pageId: string,
