@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import type { ContentItem } from "@/lib/types";
+import type { ReviewResult } from "@/lib/review";
 import { DeadlineBadge } from "./deadline-badge";
 
 const SP_OPTIONS = ["발행 전", "발행 요청", "발행 완"] as const;
@@ -66,6 +67,112 @@ function InlineSelect({
   );
 }
 
+function ReviewBadge({
+  result,
+  onReview,
+  reviewing,
+}: {
+  result: ReviewResult | null;
+  onReview: () => void;
+  reviewing: boolean;
+}) {
+  if (reviewing) {
+    return <span className="text-xs text-zinc-500">검수 중...</span>;
+  }
+
+  if (!result) {
+    return (
+      <button
+        onClick={onReview}
+        className="rounded-md bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+      >
+        검수
+      </button>
+    );
+  }
+
+  const color =
+    result.score >= 80
+      ? "text-green-400"
+      : result.score >= 60
+        ? "text-yellow-400"
+        : "text-red-400";
+
+  const errorCount = result.issues.filter((i) => i.type === "error").length;
+  const warnCount = result.issues.filter((i) => i.type === "warning").length;
+
+  return (
+    <button
+      onClick={onReview}
+      className="group flex items-center gap-1.5"
+      title={result.issues.map((i) => `[${i.type}] ${i.message}`).join("\n")}
+    >
+      <span className={`font-mono text-xs font-medium ${color}`}>
+        {result.score}
+      </span>
+      {(errorCount > 0 || warnCount > 0) && (
+        <span className="text-xs text-zinc-500">
+          {errorCount > 0 && (
+            <span className="text-red-400">{errorCount}</span>
+          )}
+          {errorCount > 0 && warnCount > 0 && "/"}
+          {warnCount > 0 && (
+            <span className="text-yellow-400">{warnCount}</span>
+          )}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function ReviewDetail({ result }: { result: ReviewResult }) {
+  return (
+    <tr>
+      <td colSpan={10} className="px-4 py-3 bg-zinc-900/50">
+        <div className="flex gap-6 mb-2 text-xs text-zinc-500">
+          <span>
+            글자 수:{" "}
+            <span className={`font-mono ${result.charCount < 1000 ? "text-yellow-400" : "text-zinc-300"}`}>
+              {result.charCount.toLocaleString()}
+            </span>
+          </span>
+          <span>
+            H2:{" "}
+            <span className={`font-mono ${result.headingCount < 3 ? "text-yellow-400" : "text-zinc-300"}`}>
+              {result.headingCount}개
+            </span>
+          </span>
+          <span>
+            이미지: <span className="font-mono text-zinc-300">{result.imageCount}장</span>
+          </span>
+        </div>
+        {result.issues.length > 0 ? (
+          <div className="space-y-1">
+            {result.issues.map((issue, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs">
+                <span
+                  className={`rounded px-1 py-0.5 font-medium ${
+                    issue.type === "error"
+                      ? "bg-red-900/50 text-red-400"
+                      : issue.type === "warning"
+                        ? "bg-yellow-900/50 text-yellow-400"
+                        : "bg-blue-900/50 text-blue-400"
+                  }`}
+                >
+                  {issue.type === "error" ? "오류" : issue.type === "warning" ? "경고" : "참고"}
+                </span>
+                <span className="text-zinc-400">{issue.message}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-green-400">이슈 없음</p>
+        )}
+      </td>
+    </tr>
+  );
+}
+
 export function PipelineTable({
   items: initialItems,
 }: {
@@ -75,6 +182,9 @@ export function PipelineTable({
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [authorFilter, setAuthorFilter] = useState<string>("all");
   const [refreshing, setRefreshing] = useState(false);
+  const [reviews, setReviews] = useState<Map<string, ReviewResult>>(new Map());
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const authors = Array.from(
     new Set(
@@ -113,7 +223,6 @@ export function PipelineTable({
       try {
         await updateNotion(pageId, field, value, "status");
       } catch {
-        // 실패 시 새로고침으로 복구
         handleRefresh();
       }
     },
@@ -146,6 +255,29 @@ export function PipelineTable({
       // ignore
     }
     setRefreshing(false);
+  };
+
+  const handleReview = async (item: ContentItem) => {
+    // 이미 결과가 있으면 토글
+    if (reviews.has(item.id)) {
+      setExpandedId(expandedId === item.id ? null : item.id);
+      return;
+    }
+
+    setReviewingId(item.id);
+    try {
+      const res = await fetch("/api/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageId: item.id, title: item.title }),
+      });
+      const result = await res.json();
+      setReviews((prev) => new Map(prev).set(item.id, result));
+      setExpandedId(item.id);
+    } catch {
+      // ignore
+    }
+    setReviewingId(null);
   };
 
   return (
@@ -197,6 +329,7 @@ export function PipelineTable({
               <th className="px-4 py-3 font-medium">뉴스레터</th>
               <th className="px-4 py-3 font-medium">링크드인</th>
               <th className="px-4 py-3 font-medium">Step2</th>
+              <th className="px-4 py-3 font-medium">검수</th>
               <th className="px-4 py-3 font-medium">마감</th>
               <th className="px-4 py-3 font-medium">D-day</th>
               <th className="px-4 py-3 font-medium">카테고리</th>
@@ -204,105 +337,120 @@ export function PipelineTable({
           </thead>
           <tbody>
             {filtered.map((item) => (
-              <tr
-                key={item.id}
-                className="border-b border-zinc-800/50 transition-colors hover:bg-zinc-900/30"
-              >
-                <td className="px-4 py-3 max-w-[240px]">
-                  <a
-                    href={item.notionUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-zinc-200 hover:text-zinc-50 hover:underline truncate block"
-                    title={item.title}
-                  >
-                    {item.title}
-                  </a>
-                </td>
-                <td className="px-4 py-3 text-zinc-400 text-xs">
-                  {item.authors.length > 0
-                    ? item.authors.map((a) => a.name).join(", ")
-                    : "-"}
-                </td>
-                <td className="px-4 py-3">
-                  <InlineSelect
-                    value={item.spStatus}
-                    options={SP_OPTIONS}
-                    colors={spColors}
-                    onChange={(v) =>
-                      handleStatusChange(
-                        item.id,
-                        "SP 발행 상태",
-                        v,
-                        "spStatus"
-                      )
-                    }
-                  />
-                </td>
-                <td className="px-4 py-3">
-                  <InlineSelect
-                    value={item.newsletterStatus}
-                    options={NL_OPTIONS}
-                    colors={nlColors}
-                    onChange={(v) =>
-                      handleStatusChange(
-                        item.id,
-                        "뉴스레터 발행 여부",
-                        v,
-                        "newsletterStatus"
-                      )
-                    }
-                  />
-                </td>
-                <td className="px-4 py-3">
-                  {item.linkedin ? (
-                    <span className="rounded-md bg-blue-900/50 px-2 py-0.5 text-xs text-blue-300">
-                      완료
-                    </span>
-                  ) : (
-                    <span className="rounded-md bg-zinc-700 px-2 py-0.5 text-xs text-zinc-400">
-                      미등록
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={item.step2Done}
-                    onChange={(e) =>
-                      handleCheckboxChange(
-                        item.id,
-                        "Step2 진행 여부",
-                        e.target.checked
-                      )
-                    }
-                    className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 accent-green-500"
-                  />
-                </td>
-                <td className="px-4 py-3 text-xs text-zinc-500 font-mono whitespace-nowrap">
-                  {item.deadline || "-"}
-                </td>
-                <td className="px-4 py-3">
-                  <DeadlineBadge deadline={item.deadline} />
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1">
-                    {item.category.map((c) => (
-                      <span
-                        key={c}
-                        className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400"
-                      >
-                        {c}
+              <>
+                <tr
+                  key={item.id}
+                  className="border-b border-zinc-800/50 transition-colors hover:bg-zinc-900/30"
+                >
+                  <td className="px-4 py-3 max-w-[220px]">
+                    <a
+                      href={item.notionUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-zinc-200 hover:text-zinc-50 hover:underline truncate block"
+                      title={item.title}
+                    >
+                      {item.title}
+                    </a>
+                  </td>
+                  <td className="px-4 py-3 text-zinc-400 text-xs">
+                    {item.authors.length > 0
+                      ? item.authors.map((a) => a.name).join(", ")
+                      : "-"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <InlineSelect
+                      value={item.spStatus}
+                      options={SP_OPTIONS}
+                      colors={spColors}
+                      onChange={(v) =>
+                        handleStatusChange(
+                          item.id,
+                          "SP 발행 상태",
+                          v,
+                          "spStatus"
+                        )
+                      }
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <InlineSelect
+                      value={item.newsletterStatus}
+                      options={NL_OPTIONS}
+                      colors={nlColors}
+                      onChange={(v) =>
+                        handleStatusChange(
+                          item.id,
+                          "뉴스레터 발행 여부",
+                          v,
+                          "newsletterStatus"
+                        )
+                      }
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    {item.linkedin ? (
+                      <span className="rounded-md bg-blue-900/50 px-2 py-0.5 text-xs text-blue-300">
+                        완료
                       </span>
-                    ))}
-                  </div>
-                </td>
-              </tr>
+                    ) : (
+                      <span className="rounded-md bg-zinc-700 px-2 py-0.5 text-xs text-zinc-400">
+                        미등록
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={item.step2Done}
+                      onChange={(e) =>
+                        handleCheckboxChange(
+                          item.id,
+                          "Step2 진행 여부",
+                          e.target.checked
+                        )
+                      }
+                      className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 accent-green-500"
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <ReviewBadge
+                      result={reviews.get(item.id) || null}
+                      onReview={() => handleReview(item)}
+                      reviewing={reviewingId === item.id}
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-xs text-zinc-500 font-mono whitespace-nowrap">
+                    {item.deadline || "-"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <DeadlineBadge deadline={item.deadline} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {item.category.map((c) => (
+                        <span
+                          key={c}
+                          className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400"
+                        >
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+                {expandedId === item.id && reviews.has(item.id) && (
+                  <ReviewDetail
+                    key={`review-${item.id}`}
+                    result={reviews.get(item.id)!}
+                  />
+                )}
+              </>
             ))}
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={10}
                   className="px-4 py-12 text-center text-zinc-600"
                 >
                   해당하는 콘텐츠가 없습니다.
