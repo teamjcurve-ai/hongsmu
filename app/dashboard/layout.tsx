@@ -3,6 +3,7 @@ import Link from "next/link";
 const nav = [
   { href: "/dashboard", label: "파이프라인" },
   { href: "/dashboard/stats", label: "통계" },
+  { href: "/dashboard/review", label: "검수" },
 ];
 
 export default function DashboardLayout({
