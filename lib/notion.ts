@@ -1,19 +1,22 @@
-import type { ContentItem, AuthorStats, WeeklyStats } from "./types";
+import type { ContentItem, Author, AuthorStats, WeeklyStats } from "./types";
 
 const NOTION_API_KEY = process.env.TEAMJCURVE_NOTION_API_KEY!;
 const DATABASE_ID = process.env.ENCYCLOPEDIA_NOTION_DATABASE_ID!;
 const NOTION_BASE = "https://api.notion.com/v1";
 
-async function notionFetch(path: string, body?: Record<string, unknown>) {
+async function notionFetch(
+  path: string,
+  options?: { method?: string; body?: Record<string, unknown> }
+) {
+  const method = options?.method || (options?.body ? "POST" : "GET");
   const res = await fetch(`${NOTION_BASE}${path}`, {
-    method: body ? "POST" : "GET",
+    method,
     headers: {
       Authorization: `Bearer ${NOTION_API_KEY}`,
       "Notion-Version": "2022-06-28",
       "Content-Type": "application/json",
     },
-    ...(body && { body: JSON.stringify(body) }),
-    next: { revalidate: 300 },
+    ...(options?.body && { body: JSON.stringify(options.body) }),
   });
   if (!res.ok) {
     throw new Error(`Notion API error: ${res.status} ${await res.text()}`);
@@ -23,16 +26,19 @@ async function notionFetch(path: string, body?: Record<string, unknown>) {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function extractTitle(props: any): string {
-  const titleProp = props["제목"];
-  return titleProp?.title?.map((t: any) => t.plain_text).join("") || "(제목 없음)";
+  return (
+    props["제목"]?.title?.map((t: any) => t.plain_text).join("") ||
+    "(제목 없음)"
+  );
 }
 
-function extractPeople(props: any): { name: string | null; email: string | null } {
-  const person = props["작성자"]?.people?.[0];
-  return {
-    name: person?.name || null,
-    email: person?.person?.email || null,
-  };
+function extractPeople(props: any): Author[] {
+  const people = props["작성자"]?.people || [];
+  return people.map((p: any) => ({
+    id: p.id,
+    name: p.name || "(이름 없음)",
+    email: p.person?.email || null,
+  }));
 }
 
 function extractStatus(props: any, field: string): string | null {
@@ -56,21 +62,29 @@ function extractCheckbox(props: any, field: string): boolean {
 }
 
 function extractRichText(props: any, field: string): string | null {
-  const text = props[field]?.rich_text?.map((t: any) => t.plain_text).join("") || "";
+  const text =
+    props[field]?.rich_text?.map((t: any) => t.plain_text).join("") || "";
   return text || null;
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-function pageToContentItem(page: { id: string; properties: Record<string, unknown> }): ContentItem {
+function pageToContentItem(page: {
+  id: string;
+  properties: Record<string, unknown>;
+}): ContentItem {
   const props = page.properties;
-  const author = extractPeople(props);
   return {
     id: page.id,
     title: extractTitle(props),
-    author: author.name,
-    authorEmail: author.email,
-    spStatus: (extractStatus(props, "SP 발행 상태") as ContentItem["spStatus"]) || "발행 전",
-    newsletterStatus: (extractStatus(props, "뉴스레터 발행 여부") as ContentItem["newsletterStatus"]) || "시작 전",
+    authors: extractPeople(props),
+    spStatus:
+      (extractStatus(props, "SP 발행 상태") as ContentItem["spStatus"]) ||
+      "발행 전",
+    newsletterStatus:
+      (extractStatus(
+        props,
+        "뉴스레터 발행 여부"
+      ) as ContentItem["newsletterStatus"]) || "시작 전",
     deadline: extractDate(props, "작성 기한"),
     newsletterDate: extractDate(props, "발행일(뉴스레터)"),
     category: extractMultiSelect(props, "카테고리"),
@@ -94,7 +108,9 @@ export async function queryEncyclopedia(): Promise<ContentItem[]> {
     };
     if (cursor) body.start_cursor = cursor;
 
-    const data = await notionFetch(`/databases/${DATABASE_ID}/query`, body);
+    const data = await notionFetch(`/databases/${DATABASE_ID}/query`, {
+      body,
+    });
 
     for (const page of data.results) {
       if (page.properties) {
@@ -103,24 +119,114 @@ export async function queryEncyclopedia(): Promise<ContentItem[]> {
     }
 
     hasMore = data.has_more;
-    cursor = data.next_cursor ?? undefined;
+    cursor = (data.next_cursor as string | null) ?? undefined;
   }
 
   return items;
+}
+
+// 페이지 상태 변경
+export async function updatePageStatus(
+  pageId: string,
+  field: string,
+  value: string
+) {
+  return notionFetch(`/pages/${pageId}`, {
+    method: "PATCH",
+    body: {
+      properties: {
+        [field]: { status: { name: value } },
+      },
+    },
+  });
+}
+
+// 체크박스 변경
+export async function updatePageCheckbox(
+  pageId: string,
+  field: string,
+  value: boolean
+) {
+  return notionFetch(`/pages/${pageId}`, {
+    method: "PATCH",
+    body: {
+      properties: {
+        [field]: { checkbox: value },
+      },
+    },
+  });
+}
+
+// URL 변경
+export async function updatePageUrl(
+  pageId: string,
+  field: string,
+  value: string | null
+) {
+  return notionFetch(`/pages/${pageId}`, {
+    method: "PATCH",
+    body: {
+      properties: {
+        [field]: { url: value },
+      },
+    },
+  });
+}
+
+// 리치텍스트 변경
+export async function updatePageRichText(
+  pageId: string,
+  field: string,
+  value: string
+) {
+  return notionFetch(`/pages/${pageId}`, {
+    method: "PATCH",
+    body: {
+      properties: {
+        [field]: {
+          rich_text: value
+            ? [{ type: "text", text: { content: value } }]
+            : [],
+        },
+      },
+    },
+  });
+}
+
+// DB에 등록된 모든 사용자 목록 (작성자 후보)
+export async function getAllAuthors(): Promise<Author[]> {
+  const items = await queryEncyclopedia();
+  const map = new Map<string, Author>();
+  for (const item of items) {
+    for (const author of item.authors) {
+      if (!map.has(author.id)) {
+        map.set(author.id, author);
+      }
+    }
+  }
+  return Array.from(map.values()).sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
 }
 
 export function computeAuthorStats(items: ContentItem[]): AuthorStats[] {
   const map = new Map<string, AuthorStats>();
 
   for (const item of items) {
-    const name = item.author || "(미배정)";
-    if (!map.has(name)) {
-      map.set(name, { name, total: 0, published: 0, inProgress: 0 });
+    const names =
+      item.authors.length > 0
+        ? item.authors.map((a) => a.name)
+        : ["(미배정)"];
+
+    for (const name of names) {
+      if (!map.has(name)) {
+        map.set(name, { name, total: 0, published: 0, inProgress: 0 });
+      }
+      const stats = map.get(name)!;
+      stats.total++;
+      if (item.spStatus === "발행 완") stats.published++;
+      if (item.spStatus === "발행 요청") stats.inProgress++;
     }
-    const stats = map.get(name)!;
-    stats.total++;
-    if (item.spStatus === "발행 완") stats.published++;
-    if (item.spStatus === "발행 요청") stats.inProgress++;
   }
 
   return Array.from(map.values()).sort((a, b) => b.total - a.total);

@@ -5,7 +5,7 @@ import {
 } from "@/lib/notion";
 import { AuthorChart, WeeklyChart } from "@/components/stats-chart";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function StatsPage() {
   const items = await queryEncyclopedia();
