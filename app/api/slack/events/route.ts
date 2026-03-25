@@ -6,6 +6,13 @@ import { after } from "next/server";
 
 export async function POST(request: NextRequest) {
   const body = await request.text();
+  const payload = JSON.parse(body);
+
+  // URL verification challenge — 서명 검증 전에 처리 (최초 설정용)
+  if (payload.type === "url_verification") {
+    return NextResponse.json({ challenge: payload.challenge });
+  }
+
   const timestamp = request.headers.get("x-slack-request-timestamp") || "";
   const signature = request.headers.get("x-slack-signature") || "";
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
@@ -16,13 +23,6 @@ export async function POST(request: NextRequest) {
 
   if (!verifySlackRequest(signingSecret, timestamp, body, signature)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-  }
-
-  const payload = JSON.parse(body);
-
-  // URL verification challenge
-  if (payload.type === "url_verification") {
-    return NextResponse.json({ challenge: payload.challenge });
   }
 
   // Event callback
