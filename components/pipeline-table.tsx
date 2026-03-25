@@ -129,7 +129,7 @@ function ReviewDetail({ result }: { result: ReviewResult }) {
   return (
     <tr>
       <td colSpan={10} className="px-4 py-3 bg-zinc-900/50">
-        <div className="flex gap-6 mb-2 text-xs text-zinc-500">
+        <div className="flex gap-6 mb-3 text-xs text-zinc-500">
           <span>
             글자 수:{" "}
             <span className={`font-mono ${result.charCount < 1000 ? "text-yellow-400" : "text-zinc-300"}`}>
@@ -146,27 +146,61 @@ function ReviewDetail({ result }: { result: ReviewResult }) {
             이미지: <span className="font-mono text-zinc-300">{result.imageCount}장</span>
           </span>
         </div>
-        {result.issues.length > 0 ? (
-          <div className="space-y-1">
-            {result.issues.map((issue, i) => (
-              <div key={i} className="flex items-start gap-2 text-xs">
-                <span
-                  className={`rounded px-1 py-0.5 font-medium ${
-                    issue.type === "error"
-                      ? "bg-red-900/50 text-red-400"
-                      : issue.type === "warning"
-                        ? "bg-yellow-900/50 text-yellow-400"
-                        : "bg-blue-900/50 text-blue-400"
-                  }`}
-                >
-                  {issue.type === "error" ? "오류" : issue.type === "warning" ? "경고" : "참고"}
-                </span>
-                <span className="text-zinc-400">{issue.message}</span>
-              </div>
-            ))}
+
+        {result.autoFixed.length > 0 && (
+          <div className="mb-3">
+            <p className="text-xs font-medium text-green-400 mb-1">자동 수정 완료</p>
+            <div className="space-y-1">
+              {result.autoFixed.map((fix, i) => (
+                <div key={i} className="text-xs text-zinc-400">
+                  <span className="rounded bg-green-900/30 px-1 py-0.5 text-green-400">수정</span>{" "}
+                  {fix.description}: <span className="line-through text-zinc-600">{fix.before}</span> → <span className="text-zinc-200">{fix.after}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        ) : (
-          <p className="text-xs text-green-400">이슈 없음</p>
+        )}
+
+        {result.humanRequired.length > 0 && (
+          <div className="mb-3">
+            <p className="text-xs font-medium text-yellow-400 mb-1">담당자 수정 필요 (DM 발송됨)</p>
+            <div className="space-y-1">
+              {result.humanRequired.map((item, i) => (
+                <div key={i} className="text-xs text-zinc-400">
+                  <span className="rounded bg-yellow-900/30 px-1 py-0.5 text-yellow-400">수동</span>{" "}
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {result.issues.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-zinc-500 mb-1">전체 이슈</p>
+            <div className="space-y-1">
+              {result.issues.map((issue, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span
+                    className={`rounded px-1 py-0.5 font-medium ${
+                      issue.type === "error"
+                        ? "bg-red-900/50 text-red-400"
+                        : issue.type === "warning"
+                          ? "bg-yellow-900/50 text-yellow-400"
+                          : "bg-blue-900/50 text-blue-400"
+                    }`}
+                  >
+                    {issue.type === "error" ? "오류" : issue.type === "warning" ? "경고" : "참고"}
+                  </span>
+                  <span className="text-zinc-400">{issue.message}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {result.issues.length === 0 && result.autoFixed.length === 0 && (
+          <p className="text-xs text-green-400">검수 통과 - 이슈 없음</p>
         )}
       </td>
     </tr>
@@ -269,7 +303,12 @@ export function PipelineTable({
       const res = await fetch("/api/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pageId: item.id, title: item.title }),
+        body: JSON.stringify({
+          pageId: item.id,
+          title: item.title,
+          authors: item.authors,
+          notionUrl: item.notionUrl,
+        }),
       });
       const result = await res.json();
       setReviews((prev) => new Map(prev).set(item.id, result));
