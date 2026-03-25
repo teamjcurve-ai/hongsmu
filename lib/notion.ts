@@ -1,4 +1,4 @@
-import type { ContentItem, Author, AuthorStats, WeeklyStats } from "./types";
+import type { ContentItem, Author, AuthorStats, WeeklyStats, OsmuStatus, DeadlineStats, CategoryStats } from "./types";
 
 const NOTION_API_KEY = process.env.TEAMJCURVE_NOTION_API_KEY!;
 const DATABASE_ID = process.env.ENCYCLOPEDIA_NOTION_DATABASE_ID!;
@@ -326,6 +326,62 @@ export function computeAuthorStats(items: ContentItem[]): AuthorStats[] {
       stats.total++;
       if (item.spStatus === "발행 완") stats.published++;
       if (item.spStatus === "발행 요청") stats.inProgress++;
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.total - a.total);
+}
+
+export function computeOsmuStatus(item: ContentItem): OsmuStatus {
+  const blog = item.spStatus === "발행 완";
+  const newsletter = item.newsletterStatus === "완료";
+  const linkedin = !!item.linkedin;
+  const done = [blog, newsletter, linkedin].filter(Boolean).length;
+  return { blog, newsletter, linkedin, done, total: 3 };
+}
+
+export function computeDeadlineStats(items: ContentItem[]): DeadlineStats {
+  let onTime = 0;
+  let delayed = 0;
+  let noDeadline = 0;
+
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+
+  for (const item of items) {
+    if (!item.deadline) {
+      noDeadline++;
+      continue;
+    }
+    if (item.spStatus === "발행 완") {
+      onTime++;
+    } else {
+      const target = new Date(item.deadline);
+      target.setHours(0, 0, 0, 0);
+      if (target.getTime() < now.getTime()) {
+        delayed++;
+      } else {
+        onTime++;
+      }
+    }
+  }
+
+  return { onTime, delayed, noDeadline };
+}
+
+export function computeCategoryStats(items: ContentItem[]): CategoryStats[] {
+  const map = new Map<string, CategoryStats>();
+
+  for (const item of items) {
+    const cats = item.category.length > 0 ? item.category : ["(미분류)"];
+    for (const cat of cats) {
+      if (!map.has(cat)) {
+        map.set(cat, { category: cat, total: 0, published: 0, inProgress: 0 });
+      }
+      const stats = map.get(cat)!;
+      stats.total++;
+      if (item.spStatus === "발행 완") stats.published++;
+      else if (item.spStatus === "발행 요청") stats.inProgress++;
     }
   }
 

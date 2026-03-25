@@ -31,3 +31,24 @@ export interface WeeklyStats {
   week: string;
   count: number;
 }
+
+export interface OsmuStatus {
+  blog: boolean;
+  newsletter: boolean;
+  linkedin: boolean;
+  done: number;
+  total: 3;
+}
+
+export interface DeadlineStats {
+  onTime: number;
+  delayed: number;
+  noDeadline: number;
+}
+
+export interface CategoryStats {
+  category: string;
+  total: number;
+  published: number;
+  inProgress: number;
+}

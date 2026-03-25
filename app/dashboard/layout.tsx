@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const nav = [
   { href: "/dashboard", label: "파이프라인" },
+  { href: "/dashboard/osmu", label: "OSMU" },
   { href: "/dashboard/calendar", label: "캘린더" },
   { href: "/dashboard/stats", label: "통계" },
   { href: "/dashboard/review", label: "검수" },
