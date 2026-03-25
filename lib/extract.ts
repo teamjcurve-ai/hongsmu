@@ -16,10 +16,8 @@ const CATEGORIES = [
 
 export interface ExtractedContent {
   title: string;
-  assignees: string[];
   direction: string;
   category: string;
-  deadline: string | null;
 }
 
 export async function extractContentFromThread(
@@ -38,10 +36,8 @@ ${threadMessages.map((m, i) => `${i + 1}. ${m}`).join("\n")}
 다음 JSON 형식으로만 응답해주세요. 설명 없이 JSON만:
 {
   "title": "블로그 콘텐츠 제목 (원본 소재와 토론 내용 기반으로 적절하게)",
-  "assignees": ["담당자 이름 배열 (스레드에서 언급된 사람)"],
   "direction": "콘텐츠 방향 요약 (2-3문장)",
-  "category": "카테고리 (다음 중 하나: ${CATEGORIES.join(", ")})",
-  "deadline": "마감일 (YYYY-MM-DD 형식, 언급 없으면 null)"
+  "category": "카테고리 (다음 중 하나: ${CATEGORIES.join(", ")})"
 }`;
 
   const { text } = await generateText({
@@ -50,7 +46,6 @@ ${threadMessages.map((m, i) => `${i + 1}. ${m}`).join("\n")}
     maxOutputTokens: 500,
   });
 
-  // JSON 파싱
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     throw new Error("Failed to extract JSON from response");
@@ -58,16 +53,68 @@ ${threadMessages.map((m, i) => `${i + 1}. ${m}`).join("\n")}
 
   const parsed = JSON.parse(jsonMatch[0]);
 
-  // 카테고리 검증
   if (!CATEGORIES.includes(parsed.category)) {
-    parsed.category = "인사이트"; // 기본값
+    parsed.category = "인사이트";
   }
 
   return {
     title: parsed.title || "(제목 미정)",
-    assignees: Array.isArray(parsed.assignees) ? parsed.assignees : [],
     direction: parsed.direction || "",
     category: parsed.category,
-    deadline: parsed.deadline || null,
   };
+}
+
+// 스레드 텍스트에서 슬랙 멘션 ID 추출 (<@U12345> 형태)
+export function extractMentionedUserIds(messages: string[]): string[] {
+  const ids = new Set<string>();
+  const pattern = /<@(U[A-Z0-9]+)>/g;
+  for (const msg of messages) {
+    let match;
+    while ((match = pattern.exec(msg)) !== null) {
+      ids.add(match[1]);
+    }
+  }
+  return Array.from(ids);
+}
+
+// 시의성 판단 → 마감일 계산
+export function computeDeadlines(
+  isUrgent: boolean
+): { deadline: string; newsletterDate: string } {
+  const now = new Date();
+
+  if (isUrgent) {
+    // 시의성 중요: 3일 후 작성 기한, 그 다음 수요일 발행
+    const deadline = new Date(now);
+    deadline.setDate(deadline.getDate() + 3);
+
+    const newsletterDate = getNextWednesday(deadline);
+    return {
+      deadline: formatDate(deadline),
+      newsletterDate: formatDate(newsletterDate),
+    };
+  }
+
+  // 기본: 다음 수요일 발행, 그 전날(화요일) 작성 기한
+  const nextWed = getNextWednesday(now);
+  const deadline = new Date(nextWed);
+  deadline.setDate(deadline.getDate() - 1);
+
+  return {
+    deadline: formatDate(deadline),
+    newsletterDate: formatDate(nextWed),
+  };
+}
+
+function getNextWednesday(from: Date): Date {
+  const d = new Date(from);
+  const day = d.getDay(); // 0=일, 3=수
+  let daysUntilWed = (3 - day + 7) % 7;
+  if (daysUntilWed === 0) daysUntilWed = 7; // 이미 수요일이면 다음 주
+  d.setDate(d.getDate() + daysUntilWed);
+  return d;
+}
+
+function formatDate(d: Date): string {
+  return d.toISOString().split("T")[0];
 }

@@ -198,8 +198,10 @@ export async function createPage(params: {
   title: string;
   category: string;
   deadline: string | null;
+  newsletterDate: string | null;
   slackLink: string | null;
   direction: string;
+  authorIds?: string[];
 }) {
   const properties: Record<string, unknown> = {
     "제목": {
@@ -219,8 +221,16 @@ export async function createPage(params: {
   if (params.deadline) {
     properties["작성 기한"] = { date: { start: params.deadline } };
   }
+  if (params.newsletterDate) {
+    properties["발행일(뉴스레터)"] = { date: { start: params.newsletterDate } };
+  }
   if (params.slackLink) {
     properties["slack 원본 링크"] = { url: params.slackLink };
+  }
+  if (params.authorIds && params.authorIds.length > 0) {
+    properties["작성자"] = {
+      people: params.authorIds.map((id) => ({ id })),
+    };
   }
 
   const page = await notionFetch("/pages", {
