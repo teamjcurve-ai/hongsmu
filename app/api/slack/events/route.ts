@@ -8,7 +8,12 @@ import {
   getUserName,
   lookupUserByEmail,
 } from "@/lib/slack";
-import { queryEncyclopedia, createPage, getAllAuthors } from "@/lib/notion";
+import {
+  queryEncyclopedia,
+  createPage,
+  getAllAuthors,
+  updatePageStatus,
+} from "@/lib/notion";
 import {
   extractContentFromThread,
   extractMentionedUserIds,
@@ -120,10 +125,30 @@ export async function POST(request: NextRequest) {
             // 시의성 판단 + 기존 스케줄 확인
             const urgent = isUrgentContent(allTexts);
             const existingItems = await queryEncyclopedia();
-            const { deadline, newsletterDate } = computeDeadlines(
-              existingItems,
-              urgent
-            );
+            const schedule = computeDeadlines(existingItems, urgent);
+
+            // 밀려난 콘텐츠가 있으면 Notion 발행일 업데이트
+            if (schedule.bumped && schedule.bumpedNewDate) {
+              const bumpedDeadline = new Date(schedule.bumpedNewDate);
+              bumpedDeadline.setDate(bumpedDeadline.getDate() - 1);
+
+              // Notion에서 발행일 + 작성 기한 변경
+              const NOTION_API_KEY = process.env.TEAMJCURVE_NOTION_API_KEY!;
+              await fetch(`https://api.notion.com/v1/pages/${schedule.bumped.id}`, {
+                method: "PATCH",
+                headers: {
+                  Authorization: `Bearer ${NOTION_API_KEY}`,
+                  "Notion-Version": "2022-06-28",
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  properties: {
+                    "발행일(뉴스레터)": { date: { start: schedule.bumpedNewDate } },
+                    "작성 기한": { date: { start: bumpedDeadline.toISOString().split("T")[0] } },
+                  },
+                }),
+              });
+            }
 
             // 슬랙 원본 링크
             const permalink = await getPermalink(
@@ -135,8 +160,8 @@ export async function POST(request: NextRequest) {
             const page = await createPage({
               title: extracted.title,
               category: extracted.category,
-              deadline,
-              newsletterDate,
+              deadline: schedule.deadline,
+              newsletterDate: schedule.newsletterDate,
               slackLink: permalink,
               direction: extracted.direction,
               authorIds: notionIds.length > 0 ? notionIds : undefined,
@@ -152,10 +177,16 @@ export async function POST(request: NextRequest) {
             if (names.length > 0) {
               confirmText += `> 담당자: ${names.join(", ")}\n`;
             }
-            confirmText += `> 작성 기한: ${deadline}\n`;
-            confirmText += `> 뉴스레터 발행일: ${newsletterDate}\n`;
+            confirmText += `> 작성 기한: ${schedule.deadline}\n`;
+            confirmText += `> 뉴스레터 발행일: ${schedule.newsletterDate}\n`;
             if (urgent) {
               confirmText += `> *시의성 중요 — 빠른 작성 필요*\n`;
+            }
+            if (schedule.bumped) {
+              const bumpedAuthors = schedule.bumped.authors.map((a) => a.name).join(", ") || "미배정";
+              confirmText += `> \n`;
+              confirmText += `> *스케줄 조정:* "${schedule.bumped.title}" (${bumpedAuthors})\n`;
+              confirmText += `> → ${schedule.bumpedNewDate} 로 발행일 변경됨\n`;
             }
             confirmText += `> <${notionUrl}|Notion에서 보기>`;
 
