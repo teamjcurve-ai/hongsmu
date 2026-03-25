@@ -193,6 +193,64 @@ export async function updatePageRichText(
   });
 }
 
+// Notion DB에 새 페이지 생성
+export async function createPage(params: {
+  title: string;
+  category: string;
+  deadline: string | null;
+  slackLink: string | null;
+  direction: string;
+}) {
+  const properties: Record<string, unknown> = {
+    "제목": {
+      title: [{ type: "text", text: { content: params.title } }],
+    },
+    "카테고리": {
+      multi_select: [{ name: params.category }],
+    },
+    "SP 발행 상태": {
+      status: { name: "발행 전" },
+    },
+    "뉴스레터 발행 여부": {
+      status: { name: "시작 전" },
+    },
+  };
+
+  if (params.deadline) {
+    properties["작성 기한"] = { date: { start: params.deadline } };
+  }
+  if (params.slackLink) {
+    properties["slack 원본 링크"] = { url: params.slackLink };
+  }
+
+  const page = await notionFetch("/pages", {
+    body: {
+      parent: { database_id: DATABASE_ID },
+      properties,
+      children: params.direction
+        ? [
+            {
+              object: "block",
+              type: "heading_2",
+              heading_2: {
+                rich_text: [{ type: "text", text: { content: "콘텐츠 방향" } }],
+              },
+            },
+            {
+              object: "block",
+              type: "paragraph",
+              paragraph: {
+                rich_text: [{ type: "text", text: { content: params.direction } }],
+              },
+            },
+          ]
+        : [],
+    },
+  });
+
+  return page;
+}
+
 // DB에 등록된 모든 사용자 목록 (작성자 후보)
 export async function getAllAuthors(): Promise<Author[]> {
   const items = await queryEncyclopedia();
