@@ -1,5 +1,6 @@
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
+import type { ContentItem } from "./types";
 
 const CATEGORIES = [
   "고객미팅",
@@ -13,6 +14,8 @@ const CATEGORIES = [
   "직장인 이야기",
   "해외사례",
 ];
+
+const WEEKLY_QUOTA = 4;
 
 export interface ExtractedContent {
   title: string;
@@ -77,42 +80,89 @@ export function extractMentionedUserIds(messages: string[]): string[] {
   return Array.from(ids);
 }
 
-// 시의성 판단 → 마감일 계산
+// 시의성 판단
+export function isUrgentContent(texts: string[]): boolean {
+  const combined = texts.join(" ");
+  return (
+    combined.includes("시의성 중요") ||
+    combined.includes("시의성중요") ||
+    combined.includes("긴급")
+  );
+}
+
+// 기존 스케줄을 확인해서 발행일 + 작성 기한 계산
 export function computeDeadlines(
+  existingItems: ContentItem[],
   isUrgent: boolean
 ): { deadline: string; newsletterDate: string } {
   const now = new Date();
+  now.setHours(0, 0, 0, 0);
 
   if (isUrgent) {
-    // 시의성 중요: 3일 후 작성 기한, 그 다음 수요일 발행
-    const deadline = new Date(now);
-    deadline.setDate(deadline.getDate() + 3);
-
-    const newsletterDate = getNextWednesday(deadline);
+    // 시의성 중요: 가장 가까운 수요일에 강제 배정 (슬롯 무시)
+    const nextWed = getNextWednesday(now);
+    const deadline = new Date(nextWed);
+    deadline.setDate(deadline.getDate() - 1);
     return {
       deadline: formatDate(deadline),
-      newsletterDate: formatDate(newsletterDate),
+      newsletterDate: formatDate(nextWed),
     };
   }
 
-  // 기본: 다음 수요일 발행, 그 전날(화요일) 작성 기한
-  const nextWed = getNextWednesday(now);
-  const deadline = new Date(nextWed);
-  deadline.setDate(deadline.getDate() - 1);
+  // 일반: 주당 4건 미만인 가장 가까운 수요일 찾기
+  // 기존 콘텐츠의 발행일별 카운트
+  const weekCounts = new Map<string, number>();
+  for (const item of existingItems) {
+    if (item.newsletterDate) {
+      const wed = formatDate(getWednesdayOfWeek(new Date(item.newsletterDate)));
+      weekCounts.set(wed, (weekCounts.get(wed) || 0) + 1);
+    }
+  }
 
+  // 이번 주 수요일부터 최대 12주 앞까지 빈 슬롯 탐색
+  let candidate = getNextWednesday(now);
+  for (let i = 0; i < 12; i++) {
+    const key = formatDate(candidate);
+    const count = weekCounts.get(key) || 0;
+    if (count < WEEKLY_QUOTA) {
+      const deadline = new Date(candidate);
+      deadline.setDate(deadline.getDate() - 1);
+      return {
+        deadline: formatDate(deadline),
+        newsletterDate: key,
+      };
+    }
+    // 다음 주 수요일
+    candidate = new Date(candidate);
+    candidate.setDate(candidate.getDate() + 7);
+  }
+
+  // 12주 내 빈 슬롯이 없으면 그냥 다음 주 수요일
+  const fallback = getNextWednesday(now);
+  const deadline = new Date(fallback);
+  deadline.setDate(deadline.getDate() - 1);
   return {
     deadline: formatDate(deadline),
-    newsletterDate: formatDate(nextWed),
+    newsletterDate: formatDate(fallback),
   };
 }
 
 function getNextWednesday(from: Date): Date {
   const d = new Date(from);
-  const day = d.getDay(); // 0=일, 3=수
+  const day = d.getDay();
   let daysUntilWed = (3 - day + 7) % 7;
-  if (daysUntilWed === 0) daysUntilWed = 7; // 이미 수요일이면 다음 주
+  if (daysUntilWed === 0) daysUntilWed = 7;
   d.setDate(d.getDate() + daysUntilWed);
   return d;
+}
+
+// 주어진 날짜가 속한 주의 수요일
+function getWednesdayOfWeek(d: Date): Date {
+  const result = new Date(d);
+  const day = result.getDay();
+  const diff = 3 - day;
+  result.setDate(result.getDate() + diff);
+  return result;
 }
 
 function formatDate(d: Date): string {

@@ -13,6 +13,7 @@ import {
   extractContentFromThread,
   extractMentionedUserIds,
   computeDeadlines,
+  isUrgentContent,
 } from "@/lib/extract";
 
 // 슬랙 유저 ID → Notion people ID 매핑
@@ -116,13 +117,13 @@ export async function POST(request: NextRequest) {
               botUserId
             );
 
-            // 시의성 판단
-            const allText = allTexts.join(" ");
-            const isUrgent =
-              allText.includes("시의성 중요") ||
-              allText.includes("시의성중요") ||
-              allText.includes("긴급");
-            const { deadline, newsletterDate } = computeDeadlines(isUrgent);
+            // 시의성 판단 + 기존 스케줄 확인
+            const urgent = isUrgentContent(allTexts);
+            const existingItems = await queryEncyclopedia();
+            const { deadline, newsletterDate } = computeDeadlines(
+              existingItems,
+              urgent
+            );
 
             // 슬랙 원본 링크
             const permalink = await getPermalink(
@@ -153,7 +154,7 @@ export async function POST(request: NextRequest) {
             }
             confirmText += `> 작성 기한: ${deadline}\n`;
             confirmText += `> 뉴스레터 발행일: ${newsletterDate}\n`;
-            if (isUrgent) {
+            if (urgent) {
               confirmText += `> *시의성 중요 — 빠른 작성 필요*\n`;
             }
             confirmText += `> <${notionUrl}|Notion에서 보기>`;
