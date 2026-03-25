@@ -8,7 +8,8 @@ function buildFeedbackMessage(
   title: string,
   notionUrl: string,
   autoFixed: Array<{ description: string; before: string; after: string }>,
-  humanRequired: string[]
+  humanRequired: string[],
+  seoTips: string[]
 ): string {
   let text = `${authorName}님! 이번에 작성하신 '${title}' 콘텐츠에 대한 피드백을 공유해 드립니다.\n\n`;
 
@@ -39,6 +40,14 @@ function buildFeedbackMessage(
     text += `검수 결과, 수정할 사항이 없습니다. 잘 작성해주셨습니다.\n\n`;
   }
 
+  if (seoTips.length > 0) {
+    text += `*참고 (SEO/GEO 개선 제안)*\n`;
+    for (const tip of seoTips) {
+      text += `> ${tip}\n`;
+    }
+    text += `\n`;
+  }
+
   text += `<${notionUrl}|노션에서 확인하기>`;
 
   return text;
@@ -62,7 +71,16 @@ export async function POST(request: NextRequest) {
       const hasFixOrIssue =
         result.autoFixed.length > 0 || result.humanRequired.length > 0;
 
-      if (hasFixOrIssue) {
+      const seoTips = result.issues
+        .filter((i) => i.category === "seo" && i.type === "info")
+        .map((i) => i.message);
+
+      const hasAnything =
+        result.autoFixed.length > 0 ||
+        result.humanRequired.length > 0 ||
+        seoTips.length > 0;
+
+      if (hasAnything) {
         for (const author of authors as Author[]) {
           if (!author.email) continue;
           const slackUserId = await lookupUserByEmail(author.email);
@@ -72,7 +90,8 @@ export async function POST(request: NextRequest) {
               title,
               notionUrl || `https://notion.so/${pageId.replace(/-/g, "")}`,
               result.autoFixed,
-              result.humanRequired
+              result.humanRequired,
+              seoTips
             );
             try {
               await sendDM(slackUserId, feedbackText);
