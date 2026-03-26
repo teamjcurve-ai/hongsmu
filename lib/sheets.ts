@@ -22,6 +22,7 @@ export interface AxProject {
   crew: string; // 크루원 이름 (탭 이름)
   category: string; // 소속 (AP/CB/MC/개인)
   name: string; // 프로젝트 이름
+  link: string | null; // 하이퍼링크 (있는 경우)
   stage: string; // 단계
   type: string; // 유형
   problem: string; // 문제인식
@@ -122,7 +123,45 @@ async function fetchSheetValues(
   });
 }
 
-function parseTabRows(crewName: string, rows: string[][]): AxProject[] {
+// D열(이름)의 하이퍼링크를 가져옴 (row index → link URL)
+async function fetchNameHyperlinks(
+  token: string,
+  tab: string
+): Promise<Map<number, string>> {
+  return new Promise((resolve, reject) => {
+    const range = encodeURIComponent(`${tab}!D5:D100`);
+    const fields = encodeURIComponent(
+      "sheets.data.rowData.values(formattedValue,hyperlink)"
+    );
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}?ranges=${range}&fields=${fields}&includeGridData=true`;
+    https.get(url, { headers: { Authorization: `Bearer ${token}` } }, (res) => {
+      let d = "";
+      res.on("data", (c) => (d += c));
+      res.on("end", () => {
+        const data = JSON.parse(d);
+        const rows =
+          data.sheets?.[0]?.data?.[0]?.rowData || [];
+        const map = new Map<number, string>();
+        rows.forEach(
+          (
+            row: { values?: [{ hyperlink?: string }] },
+            i: number
+          ) => {
+            const link = row.values?.[0]?.hyperlink;
+            if (link) map.set(i + 4, link); // i+4 because data starts at row index 4
+          }
+        );
+        resolve(map);
+      });
+    }).on("error", reject);
+  });
+}
+
+function parseTabRows(
+  crewName: string,
+  rows: string[][],
+  links: Map<number, string>
+): AxProject[] {
   const projects: AxProject[] = [];
   // Row 1-2: empty, Row 3: header, Row 4: description, Row 5+: data
   for (let i = 4; i < rows.length; i++) {
@@ -135,6 +174,7 @@ function parseTabRows(crewName: string, rows: string[][]): AxProject[] {
       crew: crewName,
       category: (row[2] || "").trim(),
       name,
+      link: links.get(i) || null,
       stage: (row[4] || "").trim(),
       type: (row[5] || "").trim(),
       problem: (row[6] || "").trim(),
@@ -165,13 +205,16 @@ export async function fetchAllCrewData(): Promise<CrewSummary[]> {
 
   const tabData = await Promise.all(
     CREW_TABS.map(async (tab) => {
-      const rows = await fetchSheetValues(token, `${tab}!A1:L100`);
-      return { tab, rows };
+      const [rows, links] = await Promise.all([
+        fetchSheetValues(token, `${tab}!A1:L100`),
+        fetchNameHyperlinks(token, tab),
+      ]);
+      return { tab, rows, links };
     })
   );
 
-  for (const { tab, rows } of tabData) {
-    const projects = parseTabRows(tab, rows);
+  for (const { tab, rows, links } of tabData) {
+    const projects = parseTabRows(tab, rows, links);
     const byStage: Record<string, number> = {};
     const byType: Record<string, number> = {};
 

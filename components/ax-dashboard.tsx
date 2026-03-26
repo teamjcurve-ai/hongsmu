@@ -99,8 +99,20 @@ function ProjectDetail({ project }: { project: AxProject }) {
         <span className="font-mono text-xs text-zinc-600 w-6">
           {project.no}
         </span>
-        <span className="flex-1 text-sm text-zinc-200 whitespace-pre-line">
-          {project.name}
+        <span className="flex-1 text-sm whitespace-pre-line">
+          {project.link ? (
+            <a
+              href={project.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-indigo-400 hover:text-indigo-300 hover:underline"
+            >
+              {project.name}
+            </a>
+          ) : (
+            <span className="text-zinc-200">{project.name}</span>
+          )}
         </span>
         <StageBadge stage={project.stage} />
         <span className="text-xs text-zinc-500">
