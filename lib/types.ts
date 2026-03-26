@@ -17,6 +17,7 @@ export interface ContentItem {
   blogLink: string | null;
   linkedin: string | null;
   step2Done: boolean;
+  spLink: string | null;
   notionUrl: string;
 }
 

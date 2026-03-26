@@ -643,19 +643,34 @@ export function PipelineTable({
                   )}
                   {show("blog") && (
                     <td className="px-4 py-3">
-                      <InlineSelect
-                        value={item.spStatus}
-                        options={SP_OPTIONS}
-                        colors={spColors}
-                        onChange={(v) =>
-                          handleStatusChange(
-                            item.id,
-                            "SP 발행 상태",
-                            v,
-                            "spStatus"
-                          )
-                        }
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <InlineSelect
+                          value={item.spStatus}
+                          options={SP_OPTIONS}
+                          colors={spColors}
+                          onChange={(v) =>
+                            handleStatusChange(
+                              item.id,
+                              "SP 발행 상태",
+                              v,
+                              "spStatus"
+                            )
+                          }
+                        />
+                        {item.spLink && (
+                          <a
+                            href={item.spLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-zinc-500 hover:text-zinc-200 transition-colors"
+                            title={item.spLink}
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        )}
+                      </div>
                     </td>
                   )}
                   {show("newsletter") && (

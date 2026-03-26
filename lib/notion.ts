@@ -92,6 +92,7 @@ function pageToContentItem(page: {
     blogLink: extractUrl(props, "블로그 링크"),
     linkedin: extractRichText(props, "링크드인"),
     step2Done: extractCheckbox(props, "Step2 진행 여부"),
+    spLink: extractUrl(props, "SP링크"),
     notionUrl: `https://notion.so/${page.id.replace(/-/g, "")}`,
   };
 }
