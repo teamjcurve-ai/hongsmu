@@ -23,7 +23,8 @@ import {
   isUrgentContent,
 } from "@/lib/extract";
 import {
-  hasExplainKeyword,
+  hasNotionKeyword,
+  hasActionKeyword,
   analyzeThreadContent,
   detectIntent,
   extractUrls,
@@ -98,131 +99,10 @@ export async function POST(request: NextRequest) {
 
     if (event.type === "app_mention") {
       const isInThread = event.thread_ts && event.thread_ts !== event.ts;
+      const eventText = event.text || "";
 
-      if (isInThread && hasExplainKeyword(event.text || "")) {
-        const intent = detectIntent(event.text || "");
-
-        if (intent.action !== "analyze") {
-          // 아티팩트 생성 요청 (팟캐스트, 슬라이드, 보고서 등)
-          const ACTION_LABELS: Record<string, string> = {
-            audio: "팟캐스트",
-            video: "비디오",
-            slides: "슬라이드",
-            report: "보고서",
-            mindmap: "마인드맵",
-            infographic: "인포그래픽",
-            research: "딥리서치",
-          };
-          const label = ACTION_LABELS[intent.action] || intent.action;
-
-          after(async () => {
-            try {
-              const messages = await getThreadMessages(event.channel, event.thread_ts);
-              const allText = messages.map((m) => m.text).join("\n");
-              const urls = extractUrls(allText);
-
-              if (urls.length === 0) {
-                await sendMessage(
-                  event.channel,
-                  `*[홍스무]* ${label} 제작을 위한 URL이 스레드에 없습니다. 링크를 먼저 올려주세요.`,
-                  { thread_ts: event.thread_ts }
-                );
-                return;
-              }
-
-              await sendMessage(
-                event.channel,
-                `*[홍스무]* ${label} 제작을 시작합니다. 완료되면 알려드릴게요.${intent.focus ? `\n> 주제: ${intent.focus}` : ""}\n> 소요 시간: 수 분~10분+`,
-                { thread_ts: event.thread_ts }
-              );
-
-              const job = await requestNlmCreate(urls, intent.action, intent.focus);
-              if (!job) {
-                await sendMessage(
-                  event.channel,
-                  `*[홍스무]* ${label} 제작 요청에 실패했습니다.`,
-                  { thread_ts: event.thread_ts }
-                );
-                return;
-              }
-
-              // 폴링으로 완료 대기 (최대 15분)
-              const maxWait = 900000;
-              const interval = 15000;
-              let elapsed = 0;
-
-              while (elapsed < maxWait) {
-                await new Promise((r) => setTimeout(r, interval));
-                elapsed += interval;
-
-                const status = await checkNlmJobStatus(job.jobId);
-                if (!status) continue;
-
-                if (status.status === "completed") {
-                  await sendMessage(
-                    event.channel,
-                    `*[홍스무]* ${label} 제작이 완료되었습니다!\n> NotebookLM에서 확인: https://notebooklm.google.com/notebook/${status.notebookId}`,
-                    { thread_ts: event.thread_ts }
-                  );
-                  return;
-                }
-
-                if (status.status === "failed") {
-                  await sendMessage(
-                    event.channel,
-                    `*[홍스무]* ${label} 제작에 실패했습니다.\n> ${status.error || "알 수 없는 오류"}`,
-                    { thread_ts: event.thread_ts }
-                  );
-                  return;
-                }
-              }
-
-              // 타임아웃
-              await sendMessage(
-                event.channel,
-                `*[홍스무]* ${label} 제작이 아직 진행 중입니다. NotebookLM에서 직접 확인해주세요.`,
-                { thread_ts: event.thread_ts }
-              );
-            } catch (error) {
-              console.error("Failed to create NLM artifact:", error);
-              await sendMessage(
-                event.channel,
-                `*[홍스무]* ${label} 제작 중 오류가 발생했습니다.`,
-                { thread_ts: event.thread_ts }
-              );
-            }
-          });
-        } else {
-          // 설명해줘/요약해줘 → 콘텐츠 분석
-          after(async () => {
-            try {
-              await sendMessage(event.channel, "분석 중입니다. 잠시만 기다려주세요...", {
-                thread_ts: event.thread_ts,
-              });
-
-              const messages = await getThreadMessages(
-                event.channel,
-                event.thread_ts
-              );
-              if (messages.length === 0) return;
-
-              const analysis = await analyzeThreadContent(messages);
-
-              await sendMessage(event.channel, analysis, {
-                thread_ts: event.thread_ts,
-              });
-            } catch (error) {
-              console.error("Failed to analyze content:", error);
-              await sendMessage(
-                event.channel,
-                "*[홍스무]* 콘텐츠 분석 중 오류가 발생했습니다.",
-                { thread_ts: event.thread_ts }
-              );
-            }
-          });
-        }
-      } else if (isInThread) {
-        // 스레드에서 @홍스무 멘션 → Notion 자동 등록
+      if (isInThread && hasNotionKeyword(eventText)) {
+        // 1순위: "노션 등록해줘/업로드해줘" → Notion 자동 등록
         after(async () => {
           try {
             const messages = await getThreadMessages(
@@ -333,6 +213,140 @@ export async function POST(request: NextRequest) {
               { thread_ts: event.thread_ts }
             );
           }
+        });
+      } else if (isInThread && hasActionKeyword(eventText)) {
+        // 2순위: NLM 아티팩트 또는 콘텐츠 분석
+        const intent = detectIntent(eventText);
+
+        if (intent.action !== "analyze") {
+          // NLM 아티팩트 생성 (팟캐스트, 슬라이드, 보고서 등)
+          const ACTION_LABELS: Record<string, string> = {
+            audio: "팟캐스트",
+            video: "비디오",
+            slides: "슬라이드",
+            report: "보고서",
+            mindmap: "마인드맵",
+            infographic: "인포그래픽",
+            research: "딥리서치",
+          };
+          const label = ACTION_LABELS[intent.action] || intent.action;
+
+          after(async () => {
+            try {
+              const messages = await getThreadMessages(event.channel, event.thread_ts);
+              const allText = messages.map((m) => m.text).join("\n");
+              const urls = extractUrls(allText);
+
+              if (urls.length === 0) {
+                await sendMessage(
+                  event.channel,
+                  `*[홍스무]* ${label} 제작을 위한 URL이 스레드에 없습니다. 링크를 먼저 올려주세요.`,
+                  { thread_ts: event.thread_ts }
+                );
+                return;
+              }
+
+              await sendMessage(
+                event.channel,
+                `*[홍스무]* ${label} 제작을 시작합니다. 완료되면 알려드릴게요.${intent.focus ? `\n> 주제: ${intent.focus}` : ""}\n> 소요 시간: 수 분~10분+`,
+                { thread_ts: event.thread_ts }
+              );
+
+              const job = await requestNlmCreate(urls, intent.action, intent.focus);
+              if (!job) {
+                await sendMessage(
+                  event.channel,
+                  `*[홍스무]* ${label} 제작 요청에 실패했습니다.`,
+                  { thread_ts: event.thread_ts }
+                );
+                return;
+              }
+
+              // 폴링으로 완료 대기 (최대 15분)
+              const maxWait = 900000;
+              const interval = 15000;
+              let elapsed = 0;
+
+              while (elapsed < maxWait) {
+                await new Promise((r) => setTimeout(r, interval));
+                elapsed += interval;
+
+                const status = await checkNlmJobStatus(job.jobId);
+                if (!status) continue;
+
+                if (status.status === "completed") {
+                  await sendMessage(
+                    event.channel,
+                    `*[홍스무]* ${label} 제작이 완료되었습니다!\n> NotebookLM에서 확인: https://notebooklm.google.com/notebook/${status.notebookId}`,
+                    { thread_ts: event.thread_ts }
+                  );
+                  return;
+                }
+
+                if (status.status === "failed") {
+                  await sendMessage(
+                    event.channel,
+                    `*[홍스무]* ${label} 제작에 실패했습니다.\n> ${status.error || "알 수 없는 오류"}`,
+                    { thread_ts: event.thread_ts }
+                  );
+                  return;
+                }
+              }
+
+              await sendMessage(
+                event.channel,
+                `*[홍스무]* ${label} 제작이 아직 진행 중입니다. NotebookLM에서 직접 확인해주세요.`,
+                { thread_ts: event.thread_ts }
+              );
+            } catch (error) {
+              console.error("Failed to create NLM artifact:", error);
+              await sendMessage(
+                event.channel,
+                `*[홍스무]* ${label} 제작 중 오류가 발생했습니다.`,
+                { thread_ts: event.thread_ts }
+              );
+            }
+          });
+        } else {
+          // 설명해줘/요약해줘 → 콘텐츠 분석
+          after(async () => {
+            try {
+              await sendMessage(event.channel, "분석 중입니다. 잠시만 기다려주세요...", {
+                thread_ts: event.thread_ts,
+              });
+
+              const messages = await getThreadMessages(event.channel, event.thread_ts);
+              if (messages.length === 0) return;
+
+              const analysis = await analyzeThreadContent(messages);
+
+              await sendMessage(event.channel, analysis, {
+                thread_ts: event.thread_ts,
+              });
+            } catch (error) {
+              console.error("Failed to analyze content:", error);
+              await sendMessage(
+                event.channel,
+                "*[홍스무]* 콘텐츠 분석 중 오류가 발생했습니다.",
+                { thread_ts: event.thread_ts }
+              );
+            }
+          });
+        }
+      } else if (isInThread) {
+        // 3순위: 스레드에서 키워드 없이 멘션 → 도움말
+        after(async () => {
+          await sendMessage(
+            event.channel,
+            `*[홍스무]* 무엇을 도와드릴까요?\n` +
+            `> *노션 등록해줘* — 이 스레드 내용을 Notion에 등록\n` +
+            `> *설명해줘 / 요약해줘* — 콘텐츠 분석\n` +
+            `> *팟캐스트 만들어줘* — 오디오 브리핑 생성\n` +
+            `> *슬라이드 만들어줘* — PPT 생성\n` +
+            `> *보고서 만들어줘* — 보고서 생성\n` +
+            `> *영상 만들어줘* — 비디오 생성`,
+            { thread_ts: event.thread_ts }
+          );
         });
       } else {
         // 일반 채널에서 @홍스무 멘션 → 현황 요약

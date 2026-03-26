@@ -255,8 +255,17 @@ export function detectIntent(text: string): NlmIntent {
   return { action: "analyze", focus: "" };
 }
 
-// 키워드 감지 (설명/요약 + 아티팩트 생성 모두 포함)
-export function hasExplainKeyword(text: string): boolean {
+// Notion 등록 키워드 감지
+export function hasNotionKeyword(text: string): boolean {
+  const keywords = [
+    "노션 등록", "노션 업로드", "노션에 등록", "노션에 업로드",
+    "등록해줘", "등록해 줘", "업로드해줘", "업로드해 줘",
+  ];
+  return keywords.some((k) => text.includes(k));
+}
+
+// NLM 또는 분석 키워드 감지
+export function hasActionKeyword(text: string): boolean {
   const keywords = [
     "설명해줘", "설명해 줘", "요약해줘", "요약해 줘",
     ...Object.keys(ACTION_KEYWORDS),
