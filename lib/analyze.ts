@@ -206,10 +206,108 @@ async function fetchUrlContent(url: string): Promise<string> {
   }
 }
 
-// 키워드 감지
+// NLM 아티팩트 생성 요청
+export type NlmAction = "audio" | "video" | "slides" | "report" | "mindmap" | "infographic" | "research" | "analyze";
+
+interface NlmIntent {
+  action: NlmAction;
+  focus: string;
+}
+
+const ACTION_KEYWORDS: Record<string, NlmAction> = {
+  "팟캐스트": "audio",
+  "오디오": "audio",
+  "podcast": "audio",
+  "영상": "video",
+  "비디오": "video",
+  "video": "video",
+  "슬라이드": "slides",
+  "발표자료": "slides",
+  "ppt": "slides",
+  "PPT": "slides",
+  "보고서": "report",
+  "리포트": "report",
+  "report": "report",
+  "마인드맵": "mindmap",
+  "mindmap": "mindmap",
+  "인포그래픽": "infographic",
+  "리서치": "research",
+  "딥리서치": "research",
+};
+
+// 사용자 의도 파악
+export function detectIntent(text: string): NlmIntent {
+  const cleaned = text.replace(/<@[A-Z0-9]+>/g, "").trim();
+
+  // 아티팩트 생성 키워드 확인
+  for (const [keyword, action] of Object.entries(ACTION_KEYWORDS)) {
+    if (cleaned.includes(keyword)) {
+      // focus 추출: 키워드 앞뒤 텍스트에서 주제 파악
+      const focus = cleaned
+        .replace(keyword, "")
+        .replace(/만들어줘|만들어 줘|제작해줘|제작해 줘|생성해줘|생성해 줘|해줘|해 줘|좀|으로|을|를|이|가/g, "")
+        .trim();
+      return { action, focus };
+    }
+  }
+
+  // 기본: 설명/요약
+  return { action: "analyze", focus: "" };
+}
+
+// 키워드 감지 (설명/요약 + 아티팩트 생성 모두 포함)
 export function hasExplainKeyword(text: string): boolean {
-  const keywords = ["설명해줘", "설명해 줘", "요약해줘", "요약해 줘"];
+  const keywords = [
+    "설명해줘", "설명해 줘", "요약해줘", "요약해 줘",
+    ...Object.keys(ACTION_KEYWORDS),
+    "만들어줘", "만들어 줘", "제작해줘", "제작해 줘", "생성해줘", "생성해 줘",
+  ];
   return keywords.some((k) => text.includes(k));
+}
+
+// NLM 아티팩트 비동기 생성 요청
+export async function requestNlmCreate(
+  urls: string[],
+  action: NlmAction,
+  focus: string = ""
+): Promise<{ jobId: string; status: string } | null> {
+  try {
+    const res = await fetch(`${NLM_API_URL}/create`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${NLM_API_SECRET}`,
+      },
+      body: JSON.stringify({ urls, action, focus, language: "ko" }),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { jobId: data.job_id, status: data.status };
+  } catch {
+    return null;
+  }
+}
+
+// NLM 작업 상태 확인
+export async function checkNlmJobStatus(
+  jobId: string
+): Promise<{ status: string; error: string; notebookId: string } | null> {
+  try {
+    const res = await fetch(`${NLM_API_URL}/job/${jobId}`, {
+      headers: { Authorization: `Bearer ${NLM_API_SECRET}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      status: data.status,
+      error: data.error || "",
+      notebookId: data.notebook_id || "",
+    };
+  } catch {
+    return null;
+  }
 }
 
 // 메인: 스레드 콘텐츠 분석 + AI 요약
