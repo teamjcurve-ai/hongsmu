@@ -242,12 +242,16 @@ export function detectIntent(text: string): NlmIntent {
   // 아티팩트 생성 키워드 확인
   for (const [keyword, action] of Object.entries(ACTION_KEYWORDS)) {
     if (cleaned.includes(keyword)) {
-      // focus 추출: 키워드 앞뒤 텍스트에서 주제 파악
+      // focus 추출: 키워드 + 동작어 모두 제거
       const focus = cleaned
         .replace(keyword, "")
-        .replace(/만들어줘|만들어 줘|제작해줘|제작해 줘|생성해줘|생성해 줘|해줘|해 줘|좀|으로|을|를|이|가/g, "")
+        .replace(/만들어\s*[줘달라구요쥬줄게]*/g, "")
+        .replace(/제작해\s*[줘달라구요쥬줄게]*/g, "")
+        .replace(/생성해\s*[줘달라구요쥬줄게]*/g, "")
+        .replace(/해\s*[줘달라구요쥬줄게]*/g, "")
+        .replace(/좀|으로|을|를|이|가|에서|로|부터|\.+/g, "")
         .trim();
-      return { action, focus };
+      return { action, focus: focus || "" };
     }
   }
 
