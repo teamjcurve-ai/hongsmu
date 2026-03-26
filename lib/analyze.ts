@@ -286,12 +286,14 @@ export function hasActionKeyword(text: string): boolean {
   return keywords.some((k) => text.includes(k));
 }
 
-// NLM 아티팩트 비동기 생성 요청
+// NLM 아티팩트 생성 요청 (VM이 Slack에 직접 응답)
 export async function requestNlmCreate(
   urls: string[],
   action: NlmAction,
-  focus: string = ""
-): Promise<{ jobId: string; status: string } | null> {
+  focus: string = "",
+  slackChannel: string = "",
+  slackThreadTs: string = ""
+): Promise<boolean> {
   try {
     const res = await fetch(`${NLM_API_URL}/create`, {
       method: "POST",
@@ -299,35 +301,46 @@ export async function requestNlmCreate(
         "Content-Type": "application/json",
         Authorization: `Bearer ${NLM_API_SECRET}`,
       },
-      body: JSON.stringify({ urls, action, focus, language: "ko" }),
-      signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({
+        urls,
+        action,
+        focus,
+        language: "ko",
+        slack_channel: slackChannel,
+        slack_thread_ts: slackThreadTs,
+      }),
+      signal: AbortSignal.timeout(15000),
     });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return { jobId: data.job_id, status: data.status };
+    return res.ok;
   } catch {
-    return null;
+    return false;
   }
 }
 
-// NLM 작업 상태 확인
-export async function checkNlmJobStatus(
-  jobId: string
-): Promise<{ status: string; error: string; notebookId: string } | null> {
+// NLM 분석 요청 (VM이 Slack에 직접 응답)
+export async function requestNlmAnalyze(
+  urls: string[],
+  slackChannel: string,
+  slackThreadTs: string
+): Promise<boolean> {
   try {
-    const res = await fetch(`${NLM_API_URL}/job/${jobId}`, {
-      headers: { Authorization: `Bearer ${NLM_API_SECRET}` },
-      signal: AbortSignal.timeout(10000),
+    const res = await fetch(`${NLM_API_URL}/analyze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${NLM_API_SECRET}`,
+      },
+      body: JSON.stringify({
+        urls,
+        question: "이 콘텐츠의 핵심 내용을 한국어로 상세히 설명해주세요. 주요 포인트, 시사점, 그리고 기업 AI 도입 관점에서의 의미를 포함해주세요.",
+        slack_channel: slackChannel,
+        slack_thread_ts: slackThreadTs,
+      }),
+      signal: AbortSignal.timeout(15000),
     });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return {
-      status: data.status,
-      error: data.error || "",
-      notebookId: data.notebook_id || "",
-    };
+    return res.ok;
   } catch {
-    return null;
+    return false;
   }
 }
 

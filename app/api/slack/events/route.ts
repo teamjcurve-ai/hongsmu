@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 
-export const maxDuration = 60;
 import { verifySlackRequest } from "@/lib/slack-verify";
 import {
   sendMessage,
@@ -25,11 +24,10 @@ import {
 import {
   hasNotionKeyword,
   hasActionKeyword,
-  analyzeThreadContent,
   detectIntent,
   extractUrls,
   requestNlmCreate,
-  checkNlmJobStatus,
+  requestNlmAnalyze,
 } from "@/lib/analyze";
 
 // 슬랙 유저 ID → Notion people ID 매핑
@@ -219,7 +217,7 @@ export async function POST(request: NextRequest) {
         const intent = detectIntent(eventText);
 
         if (intent.action !== "analyze") {
-          // NLM 아티팩트 생성 (팟캐스트, 슬라이드, 보고서 등)
+          // NLM 아티팩트 생성 — VM에 요청 후 즉시 반환 (VM이 Slack에 직접 응답)
           const ACTION_LABELS: Record<string, string> = {
             audio: "팟캐스트",
             video: "비디오",
@@ -248,56 +246,21 @@ export async function POST(request: NextRequest) {
 
               await sendMessage(
                 event.channel,
-                `*[홍스무]* ${label} 제작을 시작합니다. 완료되면 알려드릴게요.${intent.focus ? `\n> 주제: ${intent.focus}` : ""}\n> 소요 시간: 수 분~10분+`,
+                `*[홍스무]* ${label} 제작을 시작합니다. 완료되면 알려드릴게요.\n> 소요 시간: 수 분~10분+`,
                 { thread_ts: event.thread_ts }
               );
 
-              const job = await requestNlmCreate(urls, intent.action, intent.focus);
-              if (!job) {
+              const ok = await requestNlmCreate(
+                urls, intent.action, intent.focus,
+                event.channel, event.thread_ts
+              );
+              if (!ok) {
                 await sendMessage(
                   event.channel,
-                  `*[홍스무]* ${label} 제작 요청에 실패했습니다.`,
+                  `*[홍스무]* ${label} 제작 요청에 실패했습니다. NLM 서버 상태를 확인해주세요.`,
                   { thread_ts: event.thread_ts }
                 );
-                return;
               }
-
-              // 폴링으로 완료 대기 (최대 15분)
-              const maxWait = 900000;
-              const interval = 15000;
-              let elapsed = 0;
-
-              while (elapsed < maxWait) {
-                await new Promise((r) => setTimeout(r, interval));
-                elapsed += interval;
-
-                const status = await checkNlmJobStatus(job.jobId);
-                if (!status) continue;
-
-                if (status.status === "completed") {
-                  await sendMessage(
-                    event.channel,
-                    `*[홍스무]* ${label} 제작이 완료되었습니다!\n> NotebookLM에서 확인: https://notebooklm.google.com/notebook/${status.notebookId}`,
-                    { thread_ts: event.thread_ts }
-                  );
-                  return;
-                }
-
-                if (status.status === "failed") {
-                  await sendMessage(
-                    event.channel,
-                    `*[홍스무]* ${label} 제작에 실패했습니다.\n> ${status.error || "알 수 없는 오류"}`,
-                    { thread_ts: event.thread_ts }
-                  );
-                  return;
-                }
-              }
-
-              await sendMessage(
-                event.channel,
-                `*[홍스무]* ${label} 제작이 아직 진행 중입니다. NotebookLM에서 직접 확인해주세요.`,
-                { thread_ts: event.thread_ts }
-              );
             } catch (error) {
               console.error("Failed to create NLM artifact:", error);
               await sendMessage(
@@ -308,7 +271,7 @@ export async function POST(request: NextRequest) {
             }
           });
         } else {
-          // 설명해줘/요약해줘 → 콘텐츠 분석
+          // 설명해줘/요약해줘 — VM에 분석 요청 후 즉시 반환 (VM이 Slack에 직접 응답)
           after(async () => {
             try {
               await sendMessage(event.channel, "분석 중입니다. 잠시만 기다려주세요...", {
@@ -318,11 +281,29 @@ export async function POST(request: NextRequest) {
               const messages = await getThreadMessages(event.channel, event.thread_ts);
               if (messages.length === 0) return;
 
-              const analysis = await analyzeThreadContent(messages);
+              const allText = messages.map((m) => m.text).join("\n");
+              const urls = extractUrls(allText);
 
-              await sendMessage(event.channel, analysis, {
-                thread_ts: event.thread_ts,
-              });
+              if (urls.length > 0) {
+                // URL이 있으면 NLM으로 심층 분석 (VM이 Slack에 직접 응답)
+                const ok = await requestNlmAnalyze(
+                  urls, event.channel, event.thread_ts
+                );
+                if (!ok) {
+                  await sendMessage(
+                    event.channel,
+                    "*[홍스무]* NLM 분석 요청에 실패했습니다. 기본 분석으로 전환합니다.",
+                    { thread_ts: event.thread_ts }
+                  );
+                }
+              } else {
+                // URL 없으면 스레드 텍스트만으로 간단 응답
+                await sendMessage(
+                  event.channel,
+                  "*[홍스무]* 분석할 URL이 스레드에 없습니다. 링크가 포함된 스레드에서 요청해주세요.",
+                  { thread_ts: event.thread_ts }
+                );
+              }
             } catch (error) {
               console.error("Failed to analyze content:", error);
               await sendMessage(
