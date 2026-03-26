@@ -52,3 +52,31 @@ export interface CategoryStats {
   published: number;
   inProgress: number;
 }
+
+export interface NewsItem {
+  id: string;
+  title: string;
+  sourceUrl: string | null;
+  spLink: string | null;
+  tags: string[];
+  date: string | null;
+  status: string;
+  newsletterUploaded: boolean;
+  notionUrl: string;
+}
+
+export interface NewsletterSection {
+  title: string;
+  summary: string;
+  imageUrl: string;
+  ctaUrl: string;
+}
+
+export interface NewsletterDraft {
+  publishDate: string;
+  main: NewsletterSection & { partnerName: string };
+  natives: NewsletterSection[];
+  news: NewsletterSection[];
+}
+
+export type NotionBlock = { id: string; type: string; [key: string]: unknown };

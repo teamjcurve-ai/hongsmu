@@ -1,5 +1,7 @@
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
+import { getPageBlocks, blocksToMarkdown } from "./notion";
+import type { NotionBlock } from "./types";
 
 export interface ReviewResult {
   pageId: string;
@@ -26,74 +28,6 @@ export interface AutoFix {
   description: string;
   before: string;
   after: string;
-}
-
-// Notion 블록을 마크다운으로 변환
-export function blocksToMarkdown(
-  blocks: Array<{ id: string; type: string; [key: string]: unknown }>
-): string {
-  const lines: string[] = [];
-
-  for (const block of blocks) {
-    const type = block.type;
-    const data = block[type] as Record<string, unknown> | undefined;
-    if (!data) continue;
-
-    const richText = (data.rich_text as Array<{ plain_text: string }>) || [];
-    const text = richText.map((t) => t.plain_text).join("");
-
-    switch (type) {
-      case "heading_1":
-        lines.push(`# ${text}`);
-        break;
-      case "heading_2":
-        lines.push(`## ${text}`);
-        break;
-      case "heading_3":
-        lines.push(`### ${text}`);
-        break;
-      case "paragraph":
-        lines.push(text);
-        break;
-      case "bulleted_list_item":
-        lines.push(`- ${text}`);
-        break;
-      case "numbered_list_item":
-        lines.push(`1. ${text}`);
-        break;
-      case "quote":
-        lines.push(`> ${text}`);
-        break;
-      case "code": {
-        const lang = (data.language as string) || "";
-        lines.push(`\`\`\`${lang}\n${text}\n\`\`\``);
-        break;
-      }
-      case "image": {
-        const imgData = data as {
-          type?: string;
-          file?: { url?: string };
-          external?: { url?: string };
-          caption?: Array<{ plain_text: string }>;
-        };
-        const url =
-          imgData.type === "file"
-            ? imgData.file?.url
-            : imgData.external?.url;
-        const caption =
-          imgData.caption?.map((c) => c.plain_text).join("") || "";
-        lines.push(`![${caption}](${url || ""})`);
-        break;
-      }
-      case "divider":
-        lines.push("---");
-        break;
-      default:
-        if (text) lines.push(text);
-    }
-  }
-
-  return lines.join("\n\n");
 }
 
 // 구조 검사
@@ -333,32 +267,6 @@ async function updateImageCaption(blockId: string, caption: string) {
       },
     }),
   });
-}
-
-// Notion 페이지 블록 조회
-async function getPageBlocks(
-  pageId: string
-): Promise<Array<{ id: string; type: string; [key: string]: unknown }>> {
-  const NOTION_API_KEY = process.env.TEAMJCURVE_NOTION_API_KEY!;
-  const blocks: Array<{ id: string; type: string; [key: string]: unknown }> = [];
-  let cursor: string | undefined = undefined;
-  let hasMore = true;
-
-  while (hasMore) {
-    const endpoint: string = `https://api.notion.com/v1/blocks/${pageId}/children?page_size=100${cursor ? `&start_cursor=${cursor}` : ""}`;
-    const res = await fetch(endpoint, {
-      headers: {
-        Authorization: `Bearer ${NOTION_API_KEY}`,
-        "Notion-Version": "2022-06-28",
-      },
-    });
-    const data = await res.json();
-    blocks.push(...(data.results || []));
-    hasMore = data.has_more;
-    cursor = data.next_cursor ?? undefined;
-  }
-
-  return blocks;
 }
 
 // 메인 검수 + 자동 수정

@@ -7,6 +7,7 @@ const nav = [
   { href: "/dashboard/calendar", label: "캘린더" },
   { href: "/dashboard/stats", label: "통계" },
   { href: "/dashboard/review", label: "검수" },
+  { href: "/dashboard/newsletter", label: "뉴스레터" },
   { href: "/dashboard/new", label: "+ 새 콘텐츠" },
 ];
 

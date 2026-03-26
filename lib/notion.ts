@@ -1,4 +1,4 @@
-import type { ContentItem, Author, AuthorStats, WeeklyStats, OsmuStatus, DeadlineStats, CategoryStats } from "./types";
+import type { ContentItem, Author, AuthorStats, WeeklyStats, OsmuStatus, DeadlineStats, CategoryStats, NewsItem, NotionBlock } from "./types";
 
 const NOTION_API_KEY = process.env.TEAMJCURVE_NOTION_API_KEY!;
 const DATABASE_ID = process.env.ENCYCLOPEDIA_NOTION_DATABASE_ID!;
@@ -404,4 +404,164 @@ export function computeWeeklyStats(items: ContentItem[]): WeeklyStats[] {
     .map(([week, count]) => ({ week, count }))
     .sort((a, b) => a.week.localeCompare(b.week))
     .slice(-12);
+}
+
+// Notion 페이지 블록(본문) 조회
+export async function getPageBlocks(pageId: string): Promise<NotionBlock[]> {
+  const blocks: NotionBlock[] = [];
+  let cursor: string | undefined = undefined;
+  let hasMore = true;
+
+  while (hasMore) {
+    const endpoint: string = `${NOTION_BASE}/blocks/${pageId}/children?page_size=100${cursor ? `&start_cursor=${cursor}` : ""}`;
+    const res = await fetch(endpoint, {
+      headers: {
+        Authorization: `Bearer ${NOTION_API_KEY}`,
+        "Notion-Version": "2022-06-28",
+      },
+    });
+    const data = await res.json();
+    blocks.push(...(data.results || []));
+    hasMore = data.has_more;
+    cursor = data.next_cursor ?? undefined;
+  }
+
+  return blocks;
+}
+
+// 블록을 마크다운으로 변환
+export function blocksToMarkdown(blocks: NotionBlock[]): string {
+  const lines: string[] = [];
+
+  for (const block of blocks) {
+    const type = block.type;
+    const data = block[type] as Record<string, unknown> | undefined;
+    if (!data) continue;
+
+    const richText = (data.rich_text as Array<{ plain_text: string }>) || [];
+    const text = richText.map((t) => t.plain_text).join("");
+
+    switch (type) {
+      case "heading_1":
+        lines.push(`# ${text}`);
+        break;
+      case "heading_2":
+        lines.push(`## ${text}`);
+        break;
+      case "heading_3":
+        lines.push(`### ${text}`);
+        break;
+      case "paragraph":
+        lines.push(text);
+        break;
+      case "bulleted_list_item":
+        lines.push(`- ${text}`);
+        break;
+      case "numbered_list_item":
+        lines.push(`1. ${text}`);
+        break;
+      case "quote":
+        lines.push(`> ${text}`);
+        break;
+      case "code": {
+        const lang = (data.language as string) || "";
+        lines.push(`\`\`\`${lang}\n${text}\n\`\`\``);
+        break;
+      }
+      case "image": {
+        const imgData = data as {
+          type?: string;
+          file?: { url?: string };
+          external?: { url?: string };
+          caption?: Array<{ plain_text: string }>;
+        };
+        const url =
+          imgData.type === "file"
+            ? imgData.file?.url
+            : imgData.external?.url;
+        const caption =
+          imgData.caption?.map((c) => c.plain_text).join("") || "";
+        lines.push(`![${caption}](${url || ""})`);
+        break;
+      }
+      case "divider":
+        lines.push("---");
+        break;
+      default:
+        if (text) lines.push(text);
+    }
+  }
+
+  return lines.join("\n\n");
+}
+
+// 블록에서 첫 번째 이미지 URL 추출
+export function extractFirstImage(blocks: NotionBlock[]): string | null {
+  for (const block of blocks) {
+    if (block.type !== "image") continue;
+    const imgData = block.image as {
+      type?: string;
+      file?: { url?: string };
+      external?: { url?: string };
+    } | undefined;
+    if (!imgData) continue;
+    const url =
+      imgData.type === "file"
+        ? imgData.file?.url
+        : imgData.external?.url;
+    if (url) return url;
+  }
+  return null;
+}
+
+// AI 뉴스 아카이브 DB 조회
+const NEWS_DB_ID = process.env.NEWS_ARCHIVE_NOTION_DATABASE_ID || "";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function pageToNewsItem(page: { id: string; properties: any }): NewsItem {
+  const props = page.properties;
+  return {
+    id: page.id,
+    title:
+      props["제목"]?.title?.map((t: any) => t.plain_text).join("") ||
+      "(제목 없음)",
+    sourceUrl: props["출처"]?.url || null,
+    spLink: props["SP링크"]?.url || null,
+    tags:
+      props["태그"]?.multi_select?.map((o: any) => o.name) || [],
+    date: props["날짜"]?.date?.start || null,
+    status: props["상태"]?.status?.name || "(없음)",
+    newsletterUploaded: props["뉴스레터 업로드"]?.checkbox || false,
+    notionUrl: `https://notion.so/${page.id.replace(/-/g, "")}`,
+  };
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+export async function queryNewsArchive(): Promise<NewsItem[]> {
+  if (!NEWS_DB_ID) return [];
+
+  const items: NewsItem[] = [];
+  let cursor: string | undefined = undefined;
+  let hasMore = true;
+
+  while (hasMore) {
+    const body: Record<string, unknown> = {
+      page_size: 100,
+      sorts: [{ property: "날짜", direction: "descending" }],
+    };
+    if (cursor) body.start_cursor = cursor;
+
+    const data = await notionFetch(`/databases/${NEWS_DB_ID}/query`, { body });
+
+    for (const page of data.results) {
+      if (page.properties) {
+        items.push(pageToNewsItem(page));
+      }
+    }
+
+    hasMore = data.has_more;
+    cursor = (data.next_cursor as string | null) ?? undefined;
+  }
+
+  return items;
 }
