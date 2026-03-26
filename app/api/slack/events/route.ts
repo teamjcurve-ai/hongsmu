@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 
-export const maxDuration = 900; // 15분 (아티팩트 생성 폴링 대기)
+export const maxDuration = 60;
 import { verifySlackRequest } from "@/lib/slack-verify";
 import {
   sendMessage,
