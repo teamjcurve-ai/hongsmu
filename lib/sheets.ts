@@ -43,7 +43,11 @@ export interface CrewSummary {
 function getServiceAccountKey() {
   const keyJson = process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_KEY;
   if (!keyJson) throw new Error("GOOGLE_SHEETS_SERVICE_ACCOUNT_KEY not set");
-  return JSON.parse(keyJson);
+  // 환경변수가 이미 객체 형태의 JSON 문자열이면 1번만 파싱
+  // 이중 인코딩된 경우 (문자열 안의 문자열) 2번 파싱
+  const parsed = JSON.parse(keyJson);
+  if (typeof parsed === "string") return JSON.parse(parsed);
+  return parsed;
 }
 
 async function getAccessToken(): Promise<string> {
