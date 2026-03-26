@@ -102,8 +102,7 @@ export function buildNewsletterHtml(data: NewsletterDraft): string {
     buildFooter(),
   ].join("\n");
 
-  return `<!doctype html><html xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="x-apple-disable-message-reformatting"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title></title>
-<style>@media screen and (max-width: 460px) { .stb-two-col .stb-column { max-width: 100% !important; } } @media screen and (min-width: 461px) { .stb-two-col .stb-column { max-width: 50% !important; } } @media screen and (max-width: 640px) { img.stb-justify { width: 100% !important; } } .stb-one-col p, .stb-two-col p { margin: 0px !important; }</style></head>
+  return `<!doctype html><html xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="x-apple-disable-message-reformatting"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title></title></head>
 <body><div role="article" aria-roledescription="email" style="-webkit-text-size-adjust: 100%;-ms-text-size-adjust: 100%;padding: 20px 0px;margin: 0 auto;">
 <table id="stb-container" role="presentation" style="width:100%;" border="0"><tbody><tr><td align="center">
 <div class="outer" style="width:100%;max-width:630px;margin: 0px auto;">
