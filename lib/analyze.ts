@@ -111,7 +111,34 @@ async function fetchWebContent(url: string): Promise<string> {
   }
 }
 
-// YouTube 자막 추출
+// NotebookLM API를 통한 콘텐츠 분석 (YouTube, 웹 등)
+const NLM_API_URL = process.env.NLM_API_URL || "https://hongsmu-nlm-api-767636756095.asia-northeast3.run.app";
+const NLM_API_SECRET = process.env.NLM_API_SECRET || "hongsmu-nlm-2026";
+
+async function fetchViaNlm(urls: string[]): Promise<string | null> {
+  try {
+    const res = await fetch(`${NLM_API_URL}/analyze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${NLM_API_SECRET}`,
+      },
+      body: JSON.stringify({
+        urls,
+        question:
+          "이 콘텐츠의 핵심 내용을 한국어로 상세히 설명해주세요. 주요 포인트, 시사점, 그리고 기업 AI 도입 관점에서의 의미를 포함해주세요.",
+      }),
+      signal: AbortSignal.timeout(120000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.answer || null;
+  } catch {
+    return null;
+  }
+}
+
+// YouTube 자막 추출 (NLM 실패 시 폴백)
 async function fetchYoutubeContent(url: string): Promise<string> {
   const videoId = extractYoutubeId(url);
   if (!videoId) return `[YouTube ID 추출 실패: ${url}]`;
@@ -126,7 +153,6 @@ async function fetchYoutubeContent(url: string): Promise<string> {
       return `[YouTube 자막]\n${text}`;
     }
   } catch {
-    // 한국어 자막 없으면 영어 시도
     try {
       const transcript = await YoutubeTranscript.fetchTranscript(videoId);
       if (transcript.length > 0) {
@@ -138,7 +164,7 @@ async function fetchYoutubeContent(url: string): Promise<string> {
     }
   }
 
-  // 자막 실패 시 oEmbed로 제목/설명
+  // 자막 실패 시 oEmbed
   try {
     const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
     const res = await fetch(oembedUrl, { signal: AbortSignal.timeout(5000) });
@@ -194,23 +220,34 @@ export async function analyzeThreadContent(
   const allText = messages.map((m) => m.text).join("\n");
   const urls = extractUrls(allText);
 
-  // 2. URL 내용 병렬 수집
-  const urlContents = await Promise.all(
-    urls.slice(0, 5).map(async (url) => {
-      const content = await fetchUrlContent(url);
-      return { url, content };
-    })
-  );
+  // 2. NLM API로 심층 분석 시도 (YouTube/웹 모두 지원)
+  let nlmAnalysis: string | null = null;
+  if (urls.length > 0) {
+    nlmAnalysis = await fetchViaNlm(urls.slice(0, 5));
+  }
 
-  // 3. AI 프롬프트 구성
+  // 3. NLM 실패 시 개별 URL 크롤링 폴백
+  let urlContents: Array<{ url: string; content: string }> = [];
+  if (!nlmAnalysis) {
+    urlContents = await Promise.all(
+      urls.slice(0, 5).map(async (url) => {
+        const content = await fetchUrlContent(url);
+        return { url, content };
+      })
+    );
+  }
+
+  // 4. AI 프롬프트 구성
   const threadText = messages
     .map((m) => m.text)
     .join("\n---\n")
     .slice(0, 3000);
 
-  const linkAnalysis = urlContents
-    .map((u) => `### ${u.url}\n${u.content}`)
-    .join("\n\n");
+  const linkAnalysis = nlmAnalysis
+    ? `[NotebookLM 심층 분석 결과]\n${nlmAnalysis}`
+    : urlContents
+        .map((u) => `### ${u.url}\n${u.content}`)
+        .join("\n\n");
 
   const prompt = `당신은 팀제이커브의 AI 콘텐츠 분석가입니다.
 아래는 크루원이 Slack 채널에 올린 콘텐츠입니다. 미팅에 참석하지 못하는 크루원 대신 내용을 설명해야 합니다.
