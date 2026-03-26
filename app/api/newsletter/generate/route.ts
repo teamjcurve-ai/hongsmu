@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
+import { put } from "@vercel/blob";
 import {
   getPageBlocks,
   blocksToMarkdown,
@@ -11,6 +12,27 @@ import {
 import { buildNewsletterPrompt } from "@/lib/newsletter-prompt";
 import { buildNewsletterHtml } from "@/lib/newsletter-template";
 import type { NewsletterDraft, NewsletterSection } from "@/lib/types";
+
+// Notion 임시 이미지를 Vercel Blob에 업로드하여 영구 URL 반환
+async function persistImage(
+  imageResult: { url: string; isExpiring: boolean } | null,
+  label: string
+): Promise<string> {
+  if (!imageResult || !imageResult.url) return "";
+  if (!imageResult.isExpiring) return imageResult.url; // 외부 URL은 그대로
+
+  try {
+    const res = await fetch(imageResult.url);
+    if (!res.ok) return imageResult.url;
+    const blob = await res.blob();
+    const ext = blob.type.includes("png") ? "png" : blob.type.includes("webp") ? "webp" : "jpg";
+    const filename = `newsletter/${label}-${Date.now()}.${ext}`;
+    const { url } = await put(filename, blob, { access: "public" });
+    return url;
+  } catch {
+    return imageResult.url; // 실패 시 원본 URL 그대로
+  }
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -57,19 +79,18 @@ export async function POST(req: Request) {
     const nativeMarkdowns = nativeBlocks.map((b) => blocksToMarkdown(b));
     const newsMarkdowns = newsBlocks.map((b) => blocksToMarkdown(b));
 
-    // 이미지 추출 (만료 경고 포함)
-    const mainImage = extractFirstImage(mainBlocks);
-    const nativeImages = nativeBlocks.map((b) => extractFirstImage(b));
-    const newsImages = newsBlocks.map((b) => extractFirstImage(b));
+    // 이미지 추출 + Vercel Blob에 영구화
+    const mainImageRaw = extractFirstImage(mainBlocks);
+    const nativeImagesRaw = nativeBlocks.map((b) => extractFirstImage(b));
+    const newsImagesRaw = newsBlocks.map((b) => extractFirstImage(b));
 
-    const imageWarnings: string[] = [];
-    if (mainImage?.isExpiring) imageWarnings.push("메인 콘텐츠");
-    nativeImages.forEach((img, i) => {
-      if (img?.isExpiring) imageWarnings.push(`사례 ${i + 1}`);
-    });
-    newsImages.forEach((img, i) => {
-      if (img?.isExpiring) imageWarnings.push(`뉴스 ${i + 1}`);
-    });
+    const [mainImageUrl, ...restImageUrls] = await Promise.all([
+      persistImage(mainImageRaw, "main"),
+      ...nativeImagesRaw.map((img, i) => persistImage(img, `native-${i}`)),
+      ...newsImagesRaw.map((img, i) => persistImage(img, `news-${i}`)),
+    ]);
+    const nativeImageUrls = restImageUrls.slice(0, nativeIds.length);
+    const newsImageUrls = restImageUrls.slice(nativeIds.length);
 
     // AI 프롬프트 생성 + 호출
     const prompt = buildNewsletterPrompt({
@@ -106,14 +127,14 @@ export async function POST(req: Request) {
         partnerName: aiResult.main?.partnerName || "",
         title: aiResult.main?.title || mainItem.title,
         summary: aiResult.main?.summary || "",
-        imageUrl: mainImage?.url || "",
+        imageUrl: mainImageUrl,
         ctaUrl: mainItem.blogLink || "https://blog.teamjcurve.com",
       },
       natives: (aiResult.natives || []).map(
         (n: { title: string; summary: string }, i: number) => ({
           title: n.title || nativeItems[i]?.title || "",
           summary: n.summary || "",
-          imageUrl: nativeImages[i]?.url || "",
+          imageUrl: nativeImageUrls[i] || "",
           ctaUrl: nativeItems[i]?.blogLink || "https://blog.teamjcurve.com",
         })
       ) as NewsletterSection[],
@@ -121,7 +142,7 @@ export async function POST(req: Request) {
         (n: { title: string; summary: string }, i: number) => ({
           title: n.title || newsItems[i]?.title || "",
           summary: n.summary || "",
-          imageUrl: newsImages[i]?.url || "",
+          imageUrl: newsImageUrls[i] || "",
           ctaUrl: newsItems[i]?.spLink || newsItems[i]?.sourceUrl || "",
         })
       ) as NewsletterSection[],
@@ -129,13 +150,7 @@ export async function POST(req: Request) {
 
     const html = buildNewsletterHtml(draft);
 
-    return NextResponse.json({
-      draft,
-      html,
-      imageWarnings: imageWarnings.length > 0
-        ? `다음 섹션의 이미지는 Notion 호스팅(1시간 만료)입니다: ${imageWarnings.join(", ")}. 외부 이미지 URL로 교체를 권장합니다.`
-        : null,
-    });
+    return NextResponse.json({ draft, html });
   } catch (error) {
     console.error("Newsletter generate error:", error);
     return NextResponse.json(

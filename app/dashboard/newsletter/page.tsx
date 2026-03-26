@@ -63,8 +63,13 @@ export default function NewsletterPage() {
     setStep(2);
     setGenerating(true);
 
+    // 다음 수요일 날짜 계산 (오늘이 수요일이면 오늘)
     const today = new Date();
-    const publishDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).padStart(2, "0")}. ${String(today.getDate()).padStart(2, "0")}.`;
+    const dayOfWeek = today.getDay();
+    const daysUntilWed = dayOfWeek <= 3 ? 3 - dayOfWeek : 10 - dayOfWeek;
+    const nextWed = new Date(today);
+    nextWed.setDate(today.getDate() + daysUntilWed);
+    const publishDate = `${nextWed.getFullYear()}. ${String(nextWed.getMonth() + 1).padStart(2, "0")}. ${String(nextWed.getDate()).padStart(2, "0")}.`;
 
     try {
       const res = await fetch("/api/newsletter/generate", {
