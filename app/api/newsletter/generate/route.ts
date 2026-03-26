@@ -107,14 +107,14 @@ export async function POST(req: Request) {
         title: aiResult.main?.title || mainItem.title,
         summary: aiResult.main?.summary || "",
         imageUrl: mainImage?.url || "",
-        ctaUrl: mainItem.blogLink || mainItem.notionUrl,
+        ctaUrl: mainItem.blogLink || "https://blog.teamjcurve.com",
       },
       natives: (aiResult.natives || []).map(
         (n: { title: string; summary: string }, i: number) => ({
           title: n.title || nativeItems[i]?.title || "",
           summary: n.summary || "",
           imageUrl: nativeImages[i]?.url || "",
-          ctaUrl: nativeItems[i]?.blogLink || nativeItems[i]?.notionUrl || "",
+          ctaUrl: nativeItems[i]?.blogLink || "https://blog.teamjcurve.com",
         })
       ) as NewsletterSection[],
       news: (aiResult.news || []).map(
