@@ -20,6 +20,7 @@ import {
   computeDeadlines,
   isUrgentContent,
 } from "@/lib/extract";
+import { hasExplainKeyword, analyzeThreadContent } from "@/lib/analyze";
 
 // 슬랙 유저 ID → Notion people ID 매핑
 async function resolveNotionAuthorIds(
@@ -89,7 +90,35 @@ export async function POST(request: NextRequest) {
     if (event.type === "app_mention") {
       const isInThread = event.thread_ts && event.thread_ts !== event.ts;
 
-      if (isInThread) {
+      if (isInThread && hasExplainKeyword(event.text || "")) {
+        // 스레드에서 "설명해줘/요약해줘" → 콘텐츠 분석
+        after(async () => {
+          try {
+            await sendMessage(event.channel, "분석 중입니다. 잠시만 기다려주세요...", {
+              thread_ts: event.thread_ts,
+            });
+
+            const messages = await getThreadMessages(
+              event.channel,
+              event.thread_ts
+            );
+            if (messages.length === 0) return;
+
+            const analysis = await analyzeThreadContent(messages);
+
+            await sendMessage(event.channel, analysis, {
+              thread_ts: event.thread_ts,
+            });
+          } catch (error) {
+            console.error("Failed to analyze content:", error);
+            await sendMessage(
+              event.channel,
+              "*[홍스무]* 콘텐츠 분석 중 오류가 발생했습니다.",
+              { thread_ts: event.thread_ts }
+            );
+          }
+        });
+      } else if (isInThread) {
         // 스레드에서 @홍스무 멘션 → Notion 자동 등록
         after(async () => {
           try {
