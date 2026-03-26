@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { ContentItem } from "@/lib/types";
 import type { ReviewResult } from "@/lib/review";
 import { DeadlineBadge } from "./deadline-badge";
@@ -19,6 +19,46 @@ const nlColors: Record<string, string> = {
   "진행 중": "bg-blue-900/80 text-blue-300",
   "완료": "bg-green-900/80 text-green-300",
 };
+
+type ColumnKey =
+  | "title"
+  | "author"
+  | "blog"
+  | "newsletter"
+  | "linkedin"
+  | "step2"
+  | "review"
+  | "deadline"
+  | "dday"
+  | "category";
+
+const ALL_COLUMNS: { key: ColumnKey; label: string; default: boolean }[] = [
+  { key: "title", label: "제목", default: true },
+  { key: "author", label: "작성자", default: true },
+  { key: "blog", label: "블로그", default: true },
+  { key: "newsletter", label: "뉴스레터", default: true },
+  { key: "linkedin", label: "링크드인", default: false },
+  { key: "step2", label: "Step2", default: false },
+  { key: "review", label: "검수", default: false },
+  { key: "deadline", label: "마감", default: true },
+  { key: "dday", label: "D-day", default: true },
+  { key: "category", label: "카테고리", default: false },
+];
+
+const STORAGE_KEY = "hongsmu-columns";
+
+function loadColumns(): Set<ColumnKey> {
+  if (typeof window === "undefined") {
+    return new Set(ALL_COLUMNS.filter((c) => c.default).map((c) => c.key));
+  }
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return new Set(JSON.parse(saved) as ColumnKey[]);
+  } catch {
+    // ignore
+  }
+  return new Set(ALL_COLUMNS.filter((c) => c.default).map((c) => c.key));
+}
 
 async function updateNotion(
   pageId: string,
@@ -64,6 +104,114 @@ function InlineSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+function ColumnToggle({
+  visible,
+  onToggle,
+}: {
+  visible: Set<ColumnKey>;
+  onToggle: (key: ColumnKey) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+      >
+        열 설정
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-lg border border-zinc-700 bg-zinc-800 p-2 shadow-xl">
+            {ALL_COLUMNS.filter((c) => c.key !== "title").map((col) => (
+              <label
+                key={col.key}
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700"
+              >
+                <input
+                  type="checkbox"
+                  checked={visible.has(col.key)}
+                  onChange={() => onToggle(col.key)}
+                  className="h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-900 accent-green-500"
+                />
+                {col.label}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function BatchBar({
+  count,
+  onBatchSp,
+  onBatchNl,
+  onClear,
+}: {
+  count: number;
+  onBatchSp: (v: string) => void;
+  onBatchNl: (v: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="mb-3 flex items-center gap-3 rounded-lg border border-indigo-800/50 bg-indigo-950/30 px-4 py-2">
+      <span className="text-sm font-medium text-indigo-300">
+        {count}건 선택
+      </span>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-zinc-500">SP:</span>
+        <select
+          defaultValue=""
+          onChange={(e) => {
+            if (e.target.value) onBatchSp(e.target.value);
+            e.target.value = "";
+          }}
+          className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300 outline-none"
+        >
+          <option value="" disabled>
+            변경
+          </option>
+          {SP_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-zinc-500">뉴스레터:</span>
+        <select
+          defaultValue=""
+          onChange={(e) => {
+            if (e.target.value) onBatchNl(e.target.value);
+            e.target.value = "";
+          }}
+          className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300 outline-none"
+        >
+          <option value="" disabled>
+            변경
+          </option>
+          {NL_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </div>
+      <button
+        onClick={onClear}
+        className="ml-auto text-xs text-zinc-500 hover:text-zinc-300"
+      >
+        선택 해제
+      </button>
+    </div>
   );
 }
 
@@ -128,7 +276,7 @@ function ReviewBadge({
 function ReviewDetail({ result }: { result: ReviewResult }) {
   return (
     <tr>
-      <td colSpan={10} className="px-4 py-3 bg-zinc-900/50">
+      <td colSpan={12} className="px-4 py-3 bg-zinc-900/50">
         <div className="flex gap-6 mb-3 text-xs text-zinc-500">
           <span>
             글자 수:{" "}
@@ -219,6 +367,28 @@ export function PipelineTable({
   const [reviews, setReviews] = useState<Map<string, ReviewResult>>(new Map());
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [visibleCols, setVisibleCols] = useState<Set<ColumnKey>>(loadColumns);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchLoading, setBatchLoading] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(visibleCols)));
+    } catch {
+      // ignore
+    }
+  }, [visibleCols]);
+
+  const toggleColumn = (key: ColumnKey) => {
+    setVisibleCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const show = (key: ColumnKey) => visibleCols.has(key);
 
   const authors = Array.from(
     new Set(
@@ -239,6 +409,23 @@ export function PipelineTable({
     }
     return true;
   });
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === filtered.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map((i) => i.id)));
+    }
+  };
 
   const handleStatusChange = useCallback(
     async (
@@ -279,6 +466,30 @@ export function PipelineTable({
     []
   );
 
+  const handleBatchStatus = async (
+    field: string,
+    value: string,
+    itemField: "spStatus" | "newsletterStatus"
+  ) => {
+    if (selected.size === 0) return;
+    setBatchLoading(true);
+    const ids = Array.from(selected);
+    setItems((prev) =>
+      prev.map((item) =>
+        ids.includes(item.id)
+          ? { ...item, [itemField]: value as ContentItem[typeof itemField] }
+          : item
+      )
+    );
+    const results = await Promise.allSettled(
+      ids.map((id) => updateNotion(id, field, value, "status"))
+    );
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) handleRefresh();
+    setSelected(new Set());
+    setBatchLoading(false);
+  };
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -292,7 +503,6 @@ export function PipelineTable({
   };
 
   const handleReview = async (item: ContentItem) => {
-    // 이미 결과가 있으면 토글
     if (reviews.has(item.id)) {
       setExpandedId(expandedId === item.id ? null : item.id);
       return;
@@ -346,32 +556,56 @@ export function PipelineTable({
             </option>
           ))}
         </select>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="ml-auto rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200 disabled:opacity-50"
-        >
-          {refreshing ? "..." : "새로고침"}
-        </button>
-        <span className="text-xs text-zinc-500 font-mono">
-          {filtered.length}건
-        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <ColumnToggle visible={visibleCols} onToggle={toggleColumn} />
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200 disabled:opacity-50"
+          >
+            {refreshing ? "..." : "새로고침"}
+          </button>
+          <span className="text-xs text-zinc-500 font-mono">
+            {filtered.length}건
+          </span>
+        </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-zinc-800">
+      {selected.size > 0 && (
+        <BatchBar
+          count={selected.size}
+          onBatchSp={(v) =>
+            handleBatchStatus("SP 발행 상태", v, "spStatus")
+          }
+          onBatchNl={(v) =>
+            handleBatchStatus("뉴스레터 발행 여부", v, "newsletterStatus")
+          }
+          onClear={() => setSelected(new Set())}
+        />
+      )}
+
+      <div className={`overflow-x-auto rounded-xl border border-zinc-800 ${batchLoading ? "opacity-50 pointer-events-none" : ""}`}>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-900/50 text-left text-xs text-zinc-500">
-              <th className="px-4 py-3 font-medium">제목</th>
-              <th className="px-4 py-3 font-medium">작성자</th>
-              <th className="px-4 py-3 font-medium">블로그</th>
-              <th className="px-4 py-3 font-medium">뉴스레터</th>
-              <th className="px-4 py-3 font-medium">링크드인</th>
-              <th className="px-4 py-3 font-medium">Step2</th>
-              <th className="px-4 py-3 font-medium">검수</th>
-              <th className="px-4 py-3 font-medium">마감</th>
-              <th className="px-4 py-3 font-medium">D-day</th>
-              <th className="px-4 py-3 font-medium">카테고리</th>
+              <th className="px-3 py-3 w-8">
+                <input
+                  type="checkbox"
+                  checked={filtered.length > 0 && selected.size === filtered.length}
+                  onChange={toggleSelectAll}
+                  className="h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-800 accent-indigo-500"
+                />
+              </th>
+              {show("title") && <th className="px-4 py-3 font-medium">제목</th>}
+              {show("author") && <th className="px-4 py-3 font-medium">작성자</th>}
+              {show("blog") && <th className="px-4 py-3 font-medium">블로그</th>}
+              {show("newsletter") && <th className="px-4 py-3 font-medium">뉴스레터</th>}
+              {show("linkedin") && <th className="px-4 py-3 font-medium">링크드인</th>}
+              {show("step2") && <th className="px-4 py-3 font-medium">Step2</th>}
+              {show("review") && <th className="px-4 py-3 font-medium">검수</th>}
+              {show("deadline") && <th className="px-4 py-3 font-medium">마감</th>}
+              {show("dday") && <th className="px-4 py-3 font-medium">D-day</th>}
+              {show("category") && <th className="px-4 py-3 font-medium">카테고리</th>}
             </tr>
           </thead>
           <tbody>
@@ -379,102 +613,130 @@ export function PipelineTable({
               <>
                 <tr
                   key={item.id}
-                  className="border-b border-zinc-800/50 transition-colors hover:bg-zinc-900/30"
+                  className={`border-b border-zinc-800/50 transition-colors hover:bg-zinc-900/30 ${selected.has(item.id) ? "bg-indigo-950/20" : ""}`}
                 >
-                  <td className="px-4 py-3 max-w-[220px]">
-                    <a
-                      href={`/dashboard/content/${item.id}`}
-                      className="text-zinc-200 hover:text-zinc-50 hover:underline truncate block"
-                      title={item.title}
-                    >
-                      {item.title}
-                    </a>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-400 text-xs">
-                    {item.authors.length > 0
-                      ? item.authors.map((a) => a.name).join(", ")
-                      : "-"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <InlineSelect
-                      value={item.spStatus}
-                      options={SP_OPTIONS}
-                      colors={spColors}
-                      onChange={(v) =>
-                        handleStatusChange(
-                          item.id,
-                          "SP 발행 상태",
-                          v,
-                          "spStatus"
-                        )
-                      }
-                    />
-                  </td>
-                  <td className="px-4 py-3">
-                    <InlineSelect
-                      value={item.newsletterStatus}
-                      options={NL_OPTIONS}
-                      colors={nlColors}
-                      onChange={(v) =>
-                        handleStatusChange(
-                          item.id,
-                          "뉴스레터 발행 여부",
-                          v,
-                          "newsletterStatus"
-                        )
-                      }
-                    />
-                  </td>
-                  <td className="px-4 py-3">
-                    {item.linkedin ? (
-                      <span className="rounded-md bg-blue-900/50 px-2 py-0.5 text-xs text-blue-300">
-                        완료
-                      </span>
-                    ) : (
-                      <span className="rounded-md bg-zinc-700 px-2 py-0.5 text-xs text-zinc-400">
-                        미등록
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3">
                     <input
                       type="checkbox"
-                      checked={item.step2Done}
-                      onChange={(e) =>
-                        handleCheckboxChange(
-                          item.id,
-                          "Step2 진행 여부",
-                          e.target.checked
-                        )
-                      }
-                      className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 accent-green-500"
+                      checked={selected.has(item.id)}
+                      onChange={() => toggleSelect(item.id)}
+                      className="h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-800 accent-indigo-500"
                     />
                   </td>
-                  <td className="px-4 py-3">
-                    <ReviewBadge
-                      result={reviews.get(item.id) || null}
-                      onReview={() => handleReview(item)}
-                      reviewing={reviewingId === item.id}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-xs text-zinc-500 font-mono whitespace-nowrap">
-                    {item.deadline || "-"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <DeadlineBadge deadline={item.deadline} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {item.category.map((c) => (
-                        <span
-                          key={c}
-                          className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400"
-                        >
-                          {c}
+                  {show("title") && (
+                    <td className="px-4 py-3 max-w-[220px]">
+                      <a
+                        href={`/dashboard/content/${item.id}`}
+                        className="text-zinc-200 hover:text-zinc-50 hover:underline truncate block"
+                        title={item.title}
+                      >
+                        {item.title}
+                      </a>
+                    </td>
+                  )}
+                  {show("author") && (
+                    <td className="px-4 py-3 text-zinc-400 text-xs">
+                      {item.authors.length > 0
+                        ? item.authors.map((a) => a.name).join(", ")
+                        : "-"}
+                    </td>
+                  )}
+                  {show("blog") && (
+                    <td className="px-4 py-3">
+                      <InlineSelect
+                        value={item.spStatus}
+                        options={SP_OPTIONS}
+                        colors={spColors}
+                        onChange={(v) =>
+                          handleStatusChange(
+                            item.id,
+                            "SP 발행 상태",
+                            v,
+                            "spStatus"
+                          )
+                        }
+                      />
+                    </td>
+                  )}
+                  {show("newsletter") && (
+                    <td className="px-4 py-3">
+                      <InlineSelect
+                        value={item.newsletterStatus}
+                        options={NL_OPTIONS}
+                        colors={nlColors}
+                        onChange={(v) =>
+                          handleStatusChange(
+                            item.id,
+                            "뉴스레터 발행 여부",
+                            v,
+                            "newsletterStatus"
+                          )
+                        }
+                      />
+                    </td>
+                  )}
+                  {show("linkedin") && (
+                    <td className="px-4 py-3">
+                      {item.linkedin ? (
+                        <span className="rounded-md bg-blue-900/50 px-2 py-0.5 text-xs text-blue-300">
+                          완료
                         </span>
-                      ))}
-                    </div>
-                  </td>
+                      ) : (
+                        <span className="rounded-md bg-zinc-700 px-2 py-0.5 text-xs text-zinc-400">
+                          미등록
+                        </span>
+                      )}
+                    </td>
+                  )}
+                  {show("step2") && (
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={item.step2Done}
+                        onChange={(e) =>
+                          handleCheckboxChange(
+                            item.id,
+                            "Step2 진행 여부",
+                            e.target.checked
+                          )
+                        }
+                        className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 accent-green-500"
+                      />
+                    </td>
+                  )}
+                  {show("review") && (
+                    <td className="px-4 py-3">
+                      <ReviewBadge
+                        result={reviews.get(item.id) || null}
+                        onReview={() => handleReview(item)}
+                        reviewing={reviewingId === item.id}
+                      />
+                    </td>
+                  )}
+                  {show("deadline") && (
+                    <td className="px-4 py-3 text-xs text-zinc-500 font-mono whitespace-nowrap">
+                      {item.deadline || "-"}
+                    </td>
+                  )}
+                  {show("dday") && (
+                    <td className="px-4 py-3">
+                      <DeadlineBadge deadline={item.deadline} />
+                    </td>
+                  )}
+                  {show("category") && (
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {item.category.map((c) => (
+                          <span
+                            key={c}
+                            className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400"
+                          >
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  )}
                 </tr>
                 {expandedId === item.id && reviews.has(item.id) && (
                   <ReviewDetail
@@ -487,7 +749,7 @@ export function PipelineTable({
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={10}
+                  colSpan={12}
                   className="px-4 py-12 text-center text-zinc-600"
                 >
                   해당하는 콘텐츠가 없습니다.
