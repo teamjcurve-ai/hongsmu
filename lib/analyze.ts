@@ -112,7 +112,7 @@ async function fetchWebContent(url: string): Promise<string> {
 }
 
 // NotebookLM API를 통한 콘텐츠 분석 (YouTube, 웹 등)
-const NLM_API_URL = process.env.NLM_API_URL || "https://hongsmu-nlm-api-767636756095.asia-northeast3.run.app";
+const NLM_API_URL = process.env.NLM_API_URL || "http://35.184.143.85:8090";
 const NLM_API_SECRET = process.env.NLM_API_SECRET || "hongsmu-nlm-2026";
 
 async function fetchViaNlm(urls: string[]): Promise<string | null> {
@@ -128,11 +128,19 @@ async function fetchViaNlm(urls: string[]): Promise<string | null> {
         question:
           "이 콘텐츠의 핵심 내용을 한국어로 상세히 설명해주세요. 주요 포인트, 시사점, 그리고 기업 AI 도입 관점에서의 의미를 포함해주세요.",
       }),
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(180000),
     });
     if (!res.ok) return null;
     const data = await res.json();
-    return data.answer || null;
+    // NLM query 응답: answer가 JSON 문자열일 수 있음
+    let answer = data.answer || "";
+    try {
+      const parsed = JSON.parse(answer);
+      answer = parsed.value?.answer || parsed.answer || answer;
+    } catch {
+      // 이미 plain text
+    }
+    return answer || null;
   } catch {
     return null;
   }
