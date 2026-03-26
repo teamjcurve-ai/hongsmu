@@ -12,6 +12,7 @@ import {
 import { buildNewsletterPrompt } from "@/lib/newsletter-prompt";
 import { buildNewsletterHtml } from "@/lib/newsletter-template";
 import type { NewsletterDraft, NewsletterSection } from "@/lib/types";
+import { convertSpLink } from "@/lib/slashpage";
 
 // Notion 임시 이미지를 Vercel Blob에 업로드하여 영구 URL 반환
 async function persistImage(
@@ -128,14 +129,14 @@ export async function POST(req: Request) {
         title: aiResult.main?.title || mainItem.title,
         summary: aiResult.main?.summary || "",
         imageUrl: mainImageUrl,
-        ctaUrl: mainItem.blogLink || "https://blog.teamjcurve.com",
+        ctaUrl: convertSpLink(mainItem.blogLink || mainItem.spLink, mainItem.category),
       },
       natives: (aiResult.natives || []).map(
         (n: { title: string; summary: string }, i: number) => ({
           title: n.title || nativeItems[i]?.title || "",
           summary: n.summary || "",
           imageUrl: nativeImageUrls[i] || "",
-          ctaUrl: nativeItems[i]?.blogLink || "https://blog.teamjcurve.com",
+          ctaUrl: convertSpLink(nativeItems[i]?.blogLink || nativeItems[i]?.spLink || null, nativeItems[i]?.category || []),
         })
       ) as NewsletterSection[],
       news: (aiResult.news || []).map(
@@ -143,7 +144,9 @@ export async function POST(req: Request) {
           title: n.title || newsItems[i]?.title || "",
           summary: n.summary || "",
           imageUrl: newsImageUrls[i] || "",
-          ctaUrl: newsItems[i]?.spLink || newsItems[i]?.sourceUrl || "",
+          ctaUrl: newsItems[i]?.spLink
+            ? convertSpLink(newsItems[i]!.spLink, newsItems[i]!.tags)
+            : newsItems[i]?.sourceUrl || "",
         })
       ) as NewsletterSection[],
     };
