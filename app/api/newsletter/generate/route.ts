@@ -57,10 +57,19 @@ export async function POST(req: Request) {
     const nativeMarkdowns = nativeBlocks.map((b) => blocksToMarkdown(b));
     const newsMarkdowns = newsBlocks.map((b) => blocksToMarkdown(b));
 
-    // 이미지 추출
+    // 이미지 추출 (만료 경고 포함)
     const mainImage = extractFirstImage(mainBlocks);
     const nativeImages = nativeBlocks.map((b) => extractFirstImage(b));
     const newsImages = newsBlocks.map((b) => extractFirstImage(b));
+
+    const imageWarnings: string[] = [];
+    if (mainImage?.isExpiring) imageWarnings.push("메인 콘텐츠");
+    nativeImages.forEach((img, i) => {
+      if (img?.isExpiring) imageWarnings.push(`사례 ${i + 1}`);
+    });
+    newsImages.forEach((img, i) => {
+      if (img?.isExpiring) imageWarnings.push(`뉴스 ${i + 1}`);
+    });
 
     // AI 프롬프트 생성 + 호출
     const prompt = buildNewsletterPrompt({
@@ -90,20 +99,21 @@ export async function POST(req: Request) {
     const aiResult = JSON.parse(jsonMatch[0]);
 
     // NewsletterDraft 조립
+    // CTA: 백과사전 → blogLink (슬래시페이지), 뉴스 → spLink (슬래시페이지) > sourceUrl (원문)
     const draft: NewsletterDraft = {
       publishDate,
       main: {
         partnerName: aiResult.main?.partnerName || "",
         title: aiResult.main?.title || mainItem.title,
         summary: aiResult.main?.summary || "",
-        imageUrl: mainImage || "",
+        imageUrl: mainImage?.url || "",
         ctaUrl: mainItem.blogLink || mainItem.notionUrl,
       },
       natives: (aiResult.natives || []).map(
         (n: { title: string; summary: string }, i: number) => ({
           title: n.title || nativeItems[i]?.title || "",
           summary: n.summary || "",
-          imageUrl: nativeImages[i] || "",
+          imageUrl: nativeImages[i]?.url || "",
           ctaUrl: nativeItems[i]?.blogLink || nativeItems[i]?.notionUrl || "",
         })
       ) as NewsletterSection[],
@@ -111,7 +121,7 @@ export async function POST(req: Request) {
         (n: { title: string; summary: string }, i: number) => ({
           title: n.title || newsItems[i]?.title || "",
           summary: n.summary || "",
-          imageUrl: newsImages[i] || "",
+          imageUrl: newsImages[i]?.url || "",
           ctaUrl: newsItems[i]?.spLink || newsItems[i]?.sourceUrl || "",
         })
       ) as NewsletterSection[],
@@ -119,7 +129,13 @@ export async function POST(req: Request) {
 
     const html = buildNewsletterHtml(draft);
 
-    return NextResponse.json({ draft, html });
+    return NextResponse.json({
+      draft,
+      html,
+      imageWarnings: imageWarnings.length > 0
+        ? `다음 섹션의 이미지는 Notion 호스팅(1시간 만료)입니다: ${imageWarnings.join(", ")}. 외부 이미지 URL로 교체를 권장합니다.`
+        : null,
+    });
   } catch (error) {
     console.error("Newsletter generate error:", error);
     return NextResponse.json(

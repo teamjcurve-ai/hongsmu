@@ -35,10 +35,12 @@ ${data.imageUrl ? `<table width="100%" cellpadding="0" cellspacing="0" style="bo
 ${buildCtaButton(data.ctaUrl, "자세히 보기")}`;
 }
 
-function buildNativeSection(data: { title: string; summary: string; imageUrl: string; ctaUrl: string }, label: string): string {
-  return `<table role="presentation" class="stb-one-col" style="width: 100%;border:0;" cellpadding="0" cellspacing="0"><tbody><tr><td style="word-break:break-all;text-align:left;margin:0px;line-height:1.7;word-break:break-word;font-size:16px;font-family:${FONT_FAMILY}!important;-ms-text-size-adjust: 100%;-webkit-text-size-adjust: 100%;color:#333333;padding:15px 15px 15px 15px;"><div style="text-align: center;"><span style="font-size: 20px; font-weight: bold; color: #333333; background-color: #fdf5b5;">AI NATIVE</span></div><div style="text-align: center;"><span style="font-size: 20px; font-weight: bold; color: #333333; background-color: #fdf5b5;">${escapeHtml(label)}</span></div></td></tr></tbody></table>
+function buildNativeSection(data: { title: string; summary: string; imageUrl: string; ctaUrl: string }): string {
+  // 제목이 길면 2줄로 자연스럽게 표시 (모바일 대응)
+  const titleHtml = escapeHtml(data.title);
+  return `<table role="presentation" class="stb-one-col" style="width: 100%;border:0;" cellpadding="0" cellspacing="0"><tbody><tr><td style="word-break:break-all;text-align:left;margin:0px;line-height:1.7;word-break:break-word;font-size:16px;font-family:${FONT_FAMILY}!important;-ms-text-size-adjust: 100%;-webkit-text-size-adjust: 100%;color:#333333;padding:15px 15px 15px 15px;"><div style="text-align: center;"><span style="font-size: 20px; font-weight: bold; color: #333333; background-color: #fdf5b5; line-height: 1.6; display: inline; padding: 2px 6px;">AI NATIVE</span></div><div style="text-align: center; margin-top: 4px;"><span style="font-size: 20px; font-weight: bold; color: #333333; background-color: #fdf5b5; line-height: 1.6; display: inline; padding: 2px 6px;">${titleHtml}</span></div></td></tr></tbody></table>
 ${data.imageUrl ? `<table role="presentation" class="stb-one-col" style="width: 100%;border:0;" cellpadding="0" cellspacing="0"><tbody><tr><td style="text-align:justify;font-size:0;box-sizing:border-box;padding:15px 15px 15px 15px;"><img src="${escapeHtml(data.imageUrl)}" alt="" style="width:100%;display:inline;vertical-align:bottom;max-width:100% !important;height:auto;border:0;" width="600" class="stb-justify"></td></tr></tbody></table>` : ""}
-<table role="presentation" class="stb-one-col" style="width: 100%;border:0;" cellpadding="0" cellspacing="0"><tbody><tr><td style="word-break:break-all;text-align:left;margin:0px;line-height:1.7;word-break:break-word;font-size:16px;font-family:${FONT_FAMILY}!important;-ms-text-size-adjust: 100%;-webkit-text-size-adjust: 100%;color:#333333;padding:15px 15px 15px 15px;"><div style="text-align: left;"><p><strong>${escapeHtml(data.title)}</strong></p><p>${escapeHtml(data.summary).replace(/\n/g, "<br>")}</p></div></td></tr></tbody></table>
+<table role="presentation" class="stb-one-col" style="width: 100%;border:0;" cellpadding="0" cellspacing="0"><tbody><tr><td style="word-break:break-all;text-align:left;margin:0px;line-height:1.7;word-break:break-word;font-size:16px;font-family:${FONT_FAMILY}!important;-ms-text-size-adjust: 100%;-webkit-text-size-adjust: 100%;color:#333333;padding:15px 15px 15px 15px;"><div style="text-align: left;">${escapeHtml(data.summary).replace(/\n/g, "<br>")}</div></td></tr></tbody></table>
 ${buildCtaButton(data.ctaUrl, "자세히 보기")}`;
 }
 
@@ -84,16 +86,17 @@ function buildFooter(): string {
 export function buildNewsletterHtml(data: NewsletterDraft): string {
   const newsHeader = `<table role="presentation" class="stb-one-col" style="width: 100%;border:0;" cellpadding="0" cellspacing="0"><tbody><tr><td style="word-break:break-all;text-align:left;margin:0px;line-height:1.7;word-break:break-word;font-size:16px;font-family:${FONT_FAMILY}!important;-ms-text-size-adjust: 100%;-webkit-text-size-adjust: 100%;color:#333333;padding:15px 15px 15px 15px;"><div style="text-align: center;"><span style="font-size: 26px; font-weight: bold;">이번 주 AI 관련 소식</span></div></td></tr></tbody></table>`;
 
+  const nativeSections = data.natives
+    .filter((n) => n.title || n.summary)
+    .flatMap((n) => [buildNativeSection(n), buildDivider()]);
+
   const body = [
     buildHeader(data.publishDate),
     buildDivider(),
     buildMainSection(data.main),
     buildDivider(),
     newsHeader,
-    buildNativeSection(data.natives[0] || { title: "", summary: "", imageUrl: "", ctaUrl: "" }, "사례 하나"),
-    buildDivider(),
-    buildNativeSection(data.natives[1] || { title: "", summary: "", imageUrl: "", ctaUrl: "" }, "사례 둘"),
-    buildDivider(),
+    ...nativeSections,
     buildNewsCards(data.news),
     buildDivider(),
     buildFooter(),

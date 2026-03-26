@@ -496,7 +496,8 @@ export function blocksToMarkdown(blocks: NotionBlock[]): string {
 }
 
 // 블록에서 첫 번째 이미지 URL 추출
-export function extractFirstImage(blocks: NotionBlock[]): string | null {
+// isExpiring: true면 Notion 호스팅 이미지 (1시간 만료)
+export function extractFirstImage(blocks: NotionBlock[]): { url: string; isExpiring: boolean } | null {
   for (const block of blocks) {
     if (block.type !== "image") continue;
     const imgData = block.image as {
@@ -505,11 +506,12 @@ export function extractFirstImage(blocks: NotionBlock[]): string | null {
       external?: { url?: string };
     } | undefined;
     if (!imgData) continue;
-    const url =
-      imgData.type === "file"
-        ? imgData.file?.url
-        : imgData.external?.url;
-    if (url) return url;
+    if (imgData.type === "external" && imgData.external?.url) {
+      return { url: imgData.external.url, isExpiring: false };
+    }
+    if (imgData.type === "file" && imgData.file?.url) {
+      return { url: imgData.file.url, isExpiring: true };
+    }
   }
   return null;
 }

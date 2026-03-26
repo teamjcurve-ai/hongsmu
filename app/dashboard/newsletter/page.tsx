@@ -41,7 +41,7 @@ export default function NewsletterPage() {
     setNativeIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
-      else if (next.size < 2) next.add(id);
+      else if (next.size < 3) next.add(id);
       return next;
     });
   };
@@ -55,7 +55,8 @@ export default function NewsletterPage() {
     });
   };
 
-  const canProceed = mainId && nativeIds.size === 2 && newsIds.size === 3;
+  const canProceed = mainId && nativeIds.size >= 1 && nativeIds.size <= 3 && newsIds.size === 3;
+  const [imageWarning, setImageWarning] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     if (!canProceed) return;
@@ -80,6 +81,7 @@ export default function NewsletterPage() {
       if (data.error) throw new Error(data.error);
       setDraft(data.draft);
       setHtml(data.html);
+      if (data.imageWarnings) setImageWarning(data.imageWarnings);
       setStep(3);
     } catch (err) {
       alert("생성 실패: " + (err instanceof Error ? err.message : "알 수 없는 오류"));
@@ -168,7 +170,7 @@ export default function NewsletterPage() {
           {/* 백과사전 */}
           <div>
             <h2 className="mb-3 text-sm font-medium text-zinc-400">
-              AI 백과사전 (메인 1건 + 사례 2건 선택)
+              AI 백과사전 (메인 1건 + 사례 1~3건 선택)
             </h2>
             <div className="space-y-1 max-h-[500px] overflow-y-auto rounded-xl border border-zinc-800 p-3">
               {encyclopedia.map((item) => {
@@ -273,8 +275,8 @@ export default function NewsletterPage() {
               </span>
               <span>
                 사례:{" "}
-                <span className={nativeIds.size === 2 ? "text-yellow-400" : "text-zinc-600"}>
-                  {nativeIds.size}/2건
+                <span className={nativeIds.size >= 1 ? "text-yellow-400" : "text-zinc-600"}>
+                  {nativeIds.size}/1~3건
                 </span>
               </span>
               <span>
@@ -310,7 +312,13 @@ export default function NewsletterPage() {
 
       {/* Step 3: 미리보기 + 편집 */}
       {step === 3 && draft && (
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div>
+          {imageWarning && (
+            <div className="mb-4 rounded-lg border border-yellow-800/50 bg-yellow-950/20 px-4 py-2 text-xs text-yellow-400">
+              {imageWarning}
+            </div>
+          )}
+          <div className="grid gap-6 lg:grid-cols-2">
           {/* 좌측: 섹션별 편집 */}
           <div className="space-y-4 max-h-[700px] overflow-y-auto pr-2">
             <h2 className="text-sm font-medium text-zinc-400">섹션 편집</h2>
@@ -378,6 +386,7 @@ export default function NewsletterPage() {
               />
             </div>
           </div>
+        </div>
         </div>
       )}
 
